@@ -213,8 +213,8 @@ export class Rider {
     this.u += vu * dt;
     const ng = tr.height(this.s, this.u);
 
-    // obstacles (car sides) -> crash
-    if (ng - prevY > 0.5 && this.invuln <= 0) {
+    // obstacles (car sides) -> crash; ordinary steep snow never trips you
+    if (ng - prevY > 0.5 && this.invuln <= 0 && ng - tr.height(this.s, this.u, false) > 0.3) {
       this.y = prevY;
       this._startCrash('obstacle');
       return;
@@ -359,7 +359,7 @@ export class Rider {
     const ground = tr.height(this.s, this.u);
     if (this.y <= ground) {
       // side impact into an obstacle?
-      if (ground - this.y > 0.65 && ground - prevY > 0.4 && this.invuln <= 0) {
+      if (ground - this.y > 0.65 && ground - prevY > 0.4 && this.invuln <= 0 && ground - tr.height(this.s, this.u, false) > 0.3) {
         this.y = prevY;
         this._startCrash('obstacle');
         return;

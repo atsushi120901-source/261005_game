@@ -1185,7 +1185,7 @@ export class World {
       this.add(beam);
       this.lightSpots.push({ p: tr.toWorld(s, 0, y0 + 6), color: new THREE.Color(lights), power: 60 });
     };
-    mk(3, 'DROP IN', [0x1a1a2e, 0x3a2a6e], 0xffffff, 0x2de2ff);
+    mk(18, 'DROP IN', [0x1a1a2e, 0x3a2a6e], 0xffffff, 0x2de2ff);
     mk(tr.finishS, 'FINISH', [0xff2d6a, 0xffa02d], 0xffffff, 0xffd02d);
   }
 

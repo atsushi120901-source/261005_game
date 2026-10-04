@@ -1,5 +1,6 @@
 import { STAGES } from '../world/stages.js';
 import { RIDERS } from '../player/characters.js';
+import { trickName } from '../player/rider.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
@@ -228,7 +229,7 @@ export class UI {
     const r = g.rider;
     this.set('score', fmt(g.score));
     this.set('time', fmtTime(g.runTime));
-    this.set('speed', String(Math.round(r.speed * 3.6)));
+    this.set('speed', String(g.state === 'countdown' ? 0 : Math.round(r.speed * 3.6)));
     this.set('tokens', `${g.tokens} / ${g.world.tokenPos.length}`);
     const c = g.combo;
     const on = c.count > 0;
@@ -245,6 +246,18 @@ export class UI {
     if (this.hintTimer > 0) {
       this.hintTimer -= 1 / 60;
       if (this.hintTimer <= 0) $('controls-hint').classList.add('hide');
+    }
+    // live readout of the trick being performed in the air
+    let live = '';
+    if (r.state === 'air' && r.trick && r.airTime > 0.25) {
+      const t = r.trick;
+      if (Math.abs(t.spin) > 2.4 || Math.abs(t.flip) > 2.4 || Object.keys(t.grabs).length) live = trickName(t);
+    }
+    if (live !== this.cache.live) {
+      this.cache.live = live;
+      const el = $('live-trick');
+      if (live) el.textContent = live;
+      el.classList.toggle('on', !!live);
     }
     if (this.grindEl && r.state === 'grind') {
       this.grindEl.querySelector('.tp').textContent = `+${fmt(r.grindTime * 520 * r.h.grind + 120)}`;

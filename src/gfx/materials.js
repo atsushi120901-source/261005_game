@@ -154,10 +154,10 @@ export function createFacadeMaterial(stage) {
               if (style > 3.5 || (style > 0.5 && style < 1.5)) {
                 float shopWin = step(0.6, p.y) * step(p.y, 3.4) * step(0.12, fract(p.x/6.0)) * step(fract(p.x/6.0), 0.88);
                 float awning = step(3.5, p.y) * step(p.y, 4.2);
-                vec3 sc = mix(uWarm, vec3(1.0,0.95,0.9), h12(vec2(floor(p.x/6.0), seed)));
+                vec3 sc = mix(uWarm, vec3(1.0,0.9,0.8), h12(vec2(floor(p.x/6.0), seed)) * 0.6);
                 diffuseColor.rgb = mix(wall * 0.6, glass, shopWin);
                 diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.6,0.08,0.06), vec3(0.08,0.2,0.5), step(0.5, h12(vec2(seed, 2.0)))), awning);
-                fEmis += sc * shopWin * 1.3 * uNight * step(0.25, h12(vec2(floor(p.x/6.0), seed+1.0)));
+                fEmis += sc * shopWin * 0.85 * uNight * step(0.25, h12(vec2(floor(p.x/6.0), seed+1.0)));
                 fRough = mix(0.85, 0.15, shopWin);
               } else if (style > 1.5 && style < 2.5) {
                 // old town: wooden lattice + warm paper glow
@@ -229,7 +229,7 @@ export function createScreenMaterial(seed) {
           }
           float scan = 0.85 + 0.15*sin(vSUv.y*500.0);
           float edge = smoothstep(0.0, 0.02, uv.x) * smoothstep(1.0, 0.98, uv.x) * smoothstep(0.0, 0.03, uv.y) * smoothstep(1.0, 0.97, uv.y);
-          diffuseColor.rgb = c * scan * edge * 2.2;
+          diffuseColor.rgb = c * scan * edge * 1.35;
         }`
       );
   };

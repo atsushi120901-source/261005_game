@@ -65,7 +65,7 @@ export class CameraRig {
       this.look.y = damp(this.look.y, lookTarget.y, 8, dt);
       this.look.z = damp(this.look.z, lookTarget.z, 10, dt);
       this.fov = damp(this.fov, 60 + clamp(sp / 32, 0, 1) * 18 + (air ? 3 : 0), 2.5, dt);
-      this._apply(tr);
+      this._apply(tr, rider);
     } else if (this.mode === 'orbit') {
       this.orbitAngle += dt * 0.18;
       const p = rider.position;
@@ -116,8 +116,20 @@ export class CameraRig {
     this.camera.lookAt(this.look);
   }
 
-  _apply(tr) {
+  _apply(tr, rider) {
     tr.toWorld(this.cs, this.cu, this.cy, this.camera.position);
+    const k = this.intro || 0;
+    if (k > 0 && rider) {
+      // countdown fly-around: start in front of the rider, swing behind
+      const e = k * k * (3 - 2 * k);
+      const a = e * 2.4;
+      const ip = tr.toWorld(rider.s + Math.cos(a) * 6.5, rider.u + Math.sin(a) * 6.5, rider.y + 1.4 + e * 2.2, _v);
+      this.camera.position.lerp(ip, e);
+      _d.copy(rider.position).setY(rider.position.y + 0.9);
+      _d.lerp(this.look, 1 - e);
+      this.camera.lookAt(_d);
+      return;
+    }
     this.camera.lookAt(this.look);
   }
 }

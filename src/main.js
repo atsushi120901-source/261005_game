@@ -197,6 +197,7 @@ class Game {
     this.world.tokenAlive.fill(1);
     this.rig.mode = 'follow';
     this.rig.snapTo(this.rider);
+    this.rig.intro = 1;
     this.score = 0;
     this.tokens = 0;
     this.runTime = 0;
@@ -440,10 +441,14 @@ class Game {
           this.ui.center(c > 0 ? String(c) : 'GO!', true);
           this.audio.play('countdown', c > 0 ? 0 : 1);
         }
-        this.character.setPose('crouch');
+        this.character.setPose(this.countdown > 1.2 ? 'idle' : 'crouch');
         this.character.update(dt, {});
         r._updateTransform(dt);
-        if (this.countdown <= 0.2) this.state = 'play';
+        this.rig.intro = clamp((this.countdown - 0.5) / 2.7, 0, 1);
+        if (this.countdown <= 0.2) {
+          this.state = 'play';
+          this.rig.intro = 0;
+        }
       } else {
         let ctl = inputState;
         if (this.autoplay) ctl = this.autoInput(dt);

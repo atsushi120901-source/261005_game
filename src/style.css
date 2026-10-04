@@ -116,6 +116,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 .trick.small .tn { font-size: 30px; }
 .trick.bad .tn { background: linear-gradient(180deg, #ff8a8a, #ff3d3d); -webkit-background-clip: text; background-clip: text; }
 @keyframes trickIn { 0% { opacity: 0; transform: scale(1.6) skewX(-8deg); filter: blur(6px); } 10% { opacity: 1; transform: scale(1) skewX(-8deg); filter: blur(0); } 75% { opacity: 1; transform: translateY(0) skewX(-8deg); } 100% { opacity: 0; transform: translateY(-30px) skewX(-8deg); } }
+.live-trick { position: absolute; top: 34%; left: 0; right: 0; text-align: center; font-family: var(--num); font-size: 30px; font-style: italic; letter-spacing: 0.08em; color: #bfe8ff; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 0.15s; }
+.live-trick.on { opacity: 0.9; }
 .center-msg { position: absolute; top: 42%; left: 0; right: 0; text-align: center; font-family: var(--num); font-size: clamp(80px, 14vw, 180px); font-style: italic; line-height: 1; text-shadow: 0 6px 40px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .center-msg.pop { animation: countPop 0.9s ease forwards; }
 @keyframes countPop { 0% { opacity: 0; transform: scale(2.2); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(0.9); } }
@@ -161,19 +163,38 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 .tbtn.on { background: rgba(255, 255, 255, 0.4); }
 .tpause { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); pointer-events: auto; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.3); color: #fff; font-family: var(--num); font-size: 20px; }
 
-@media (max-width: 900px) {
-  #select.show { padding: 16px; background: linear-gradient(180deg, rgba(5, 6, 14, 0.1) 0%, rgba(5, 6, 14, 0.85) 45%); }
-  .sel-body { grid-template-columns: 1fr; overflow-y: auto; }
-  .sel-spacer { display: none; }
+@media (max-width: 900px), (max-height: 500px) {
+  #select.show { padding: 10px 14px; background: linear-gradient(90deg, rgba(5, 6, 14, 0.75), rgba(5, 6, 14, 0.35) 50%, rgba(5, 6, 14, 0.75)); }
+  .sel-title { font-size: 26px; }
+  .sel-sub { display: none; }
+  .sel-body { grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; overflow: hidden; }
+  .sel-spacer, .info-panel, .rider-card .tg, .stage-card .ds { display: none; }
   .sel-col.riders { justify-content: flex-start; }
-  .rider-card { width: auto; flex: 1; }
-  .sel-title { font-size: 32px; }
+  .sel-label { font-size: 16px; }
+  .cards { gap: 8px; }
+  .rider-card .nm { font-size: 26px; }
+  .stage-card { padding: 6px 12px 6px 16px; }
+  .stage-card .nm { font-size: 22px; }
+  .stage-card .jp { font-size: 12px; margin: 0; }
+  .stage-card .time { font-size: 14px; }
+  .stage-card .best { font-size: 14px; margin-top: 2px; }
+  .sel-foot { margin-top: 8px; }
+  .btn { font-size: 20px; padding: 6px 20px 3px; }
   .hud-tl { left: 14px; top: 12px; }
   .hud-tr { right: 14px; top: 12px; }
   .score { font-size: 46px; }
   .speed-row { font-size: 46px; }
-  .controls-hint { display: none; }
-  .title-foot { display: none; }
-  .panel { padding: 20px; min-width: 0; width: 92vw; }
-  .rank { font-size: 100px; }
+  .time-row { font-size: 26px; }
+  .controls-hint, .title-foot, .district { display: none; }
+  .hud-bottom { bottom: auto; top: 70px; width: 40vw; }
+  .panel { padding: 16px 20px; min-width: 0; width: 92vw; gap: 8px; }
+  .panel-title { font-size: 34px; }
+  .rank { font-size: 90px; }
+  .res-grid b { font-size: 20px; }
+  .res-total b { font-size: 44px; }
+  .trick .tn { font-size: 30px; }
+  .trick .tp { font-size: 20px; }
+}
+@media (max-width: 600px) {
+  .sel-body { grid-template-columns: 1fr; overflow-y: auto; }
 }
