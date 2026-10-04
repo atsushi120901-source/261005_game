@@ -87,6 +87,7 @@ export const STAGES = [
       shadowElev: 0.22,
     },
     bloom: { strength: 0.45, radius: 0.55, threshold: 0.92 },
+    godRays: 1.6,
     grade: { lift: [0.02, 0.005, -0.01], gain: [1.08, 1.0, 0.92], saturation: 1.12, contrast: 1.1, vignette: 0.35 },
     snow: { count: 3500, speed: 1.4, size: 0.85, wind: [-0.6, 0, 0.3] },
     city: {

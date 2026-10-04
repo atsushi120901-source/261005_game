@@ -53,7 +53,7 @@ export class Input {
       if (b(1)) grab = 'method';
       if (b(3)) grab = 'nose';
       if (b(4) || b(5) || b(7)) grab = grab || 'tail';
-      const edges = { 0: 'PadA', 1: 'PadB', 9: 'PadStart', 12: 'PadUp', 13: 'PadDown', 14: 'PadLeft', 15: 'PadRight' };
+      const edges = { 0: 'PadA', 1: 'PadB', 8: 'PadSelect', 9: 'PadStart', 12: 'PadUp', 13: 'PadDown', 14: 'PadLeft', 15: 'PadRight' };
       for (const i in edges) {
         const now = !!b(+i);
         if (now && !this.prevPad[i]) this.pressed.add(edges[i]);

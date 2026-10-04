@@ -42,6 +42,7 @@ class Game {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 4000);
     this.rig = new CameraRig(this.camera);
+    this.rig.camMode = store.get('cam', 'dynamic');
     this.post = new PostFX(this.renderer, this.scene, this.camera, this.quality);
     this.post.setSize(innerWidth, innerHeight);
     this.input = new Input();
@@ -155,6 +156,8 @@ class Game {
   // ------------------------------------------------------------------ states
   toTitle() {
     this.state = 'title';
+    this.character.root.visible = true;
+    this.character.extras.visible = true;
     this.placeShowcase();
     this.rig.mode = 'orbit';
     this.audio.silenceLoops();
@@ -163,6 +166,8 @@ class Game {
 
   toSelect() {
     this.state = 'select';
+    this.character.root.visible = true;
+    this.character.extras.visible = true;
     this.placeShowcase();
     this.rig.mode = 'showcase';
     this.audio.silenceLoops();
@@ -346,6 +351,8 @@ class Game {
 
   showResults() {
     this.state = 'results';
+    this.character.root.visible = true;
+    this.character.extras.visible = true;
     this.audio.silenceLoops();
     const par = this.track.length / 17;
     const bonus = Math.max(0, Math.round((par - this.runTime) * 120 / 10) * 10);
@@ -471,9 +478,14 @@ class Game {
         this.audio.setRide({ speed: r.speed, carve: r.sprayAmt || 0, grounded: r.state === 'ground', air: r.state === 'air' });
       }
       this.rig.update(sdt, r);
+      // hide the body in helmet view
+      const pov = this.rig.camMode === 'pov' && !(this.rig.intro > 0) && r.state !== 'crash' && this.finishT <= 0;
+      this.character.root.visible = !pov;
+      this.character.extras.visible = !pov;
       this.ui.updateHud(this);
       this.fx.update(sdt, this.time, this.camera, this.viewH);
       this.world.update(sdt, this.time, r.position, this.camera, this.viewH);
+      this.post.updateSun(this.camera, this.world.sunDir);
       if (render) this.post.render(dt, this.time, clamp((r.speed - 8) / 26, 0, 1) * (this.timeScale < 0.9 ? 0.4 : 1));
     } else {
       // menus / paused / results: keep the city alive
@@ -489,6 +501,7 @@ class Game {
       }
       this.fx.update(this.state === 'paused' ? 0 : dt, this.time, this.camera, this.viewH);
       this.world.update(dt, this.time, r.position, this.camera, this.viewH);
+      this.post.updateSun(this.camera, this.world.sunDir);
       if (render) this.post.render(dt, this.time, 0);
     }
     inp.endFrame();

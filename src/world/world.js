@@ -28,6 +28,8 @@ export class World {
     this.groundGlows = []; // {s,u,y,size,color}
     this.wires = [];
     this.disposables = [];
+    this.sideLamps = [];
+    this.signals = [];
 
     this.mats = this._materials();
     this.sunDir = new THREE.Vector3(...stage.sky.sunDir).normalize();
@@ -329,12 +331,13 @@ export class World {
   }
 
   // ------------------------------------------------------------------ buildings
-  _box(gb, s, u0, w, d, y0, y1, groundY, fac, color, roof = true) {
+  _box(gb, s, u0, w, d, y0, y1, groundY, fac, color, roof = true, opt = null) {
     // Box aligned with track at s, centered laterally at u0. Width w along track.
+    // opt.fs: use the frame at fs (straight side streets), offset by opt.ds along it.
     const tr = this.track;
-    const f = tr.frame(s, {});
+    const f = tr.frame(opt ? opt.fs : s, {});
     const T = V(f.tx, 0, f.tz), R = V(f.rx, 0, f.rz);
-    const c = tr.toWorld(s, u0, 0);
+    const c = opt ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
     const corner = (a, b, y) => V(c.x + T.x * a + R.x * b, y, c.z + T.z * a + R.z * b);
     const hw = w / 2, hd = d / 2;
     const col = [color.r, color.g, color.b];
@@ -358,11 +361,11 @@ export class World {
     return { T, R, c, corner };
   }
 
-  _gable(gb, s, u0, w, d, y1, rise, color, seed) {
+  _gable(gb, s, u0, w, d, y1, rise, color, seed, opt = null) {
     const tr = this.track;
-    const f = tr.frame(s, {});
+    const f = tr.frame(opt ? opt.fs : s, {});
     const T = V(f.tx, 0, f.tz), R = V(f.rx, 0, f.rz);
-    const c = tr.toWorld(s, u0, 0);
+    const c = opt ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
     const P = (a, b, y) => V(c.x + T.x * a + R.x * b, y, c.z + T.z * a + R.z * b);
     const ov = 0.7;
     const hw = w / 2 + ov, hd = d / 2 + ov;
@@ -396,6 +399,7 @@ export class World {
       if (!chunks.has(k)) chunks.set(k, new GeoBuilder({ color: 3, aFacade: 4 }));
       return chunks.get(k);
     };
+    this.getGB = getGB;
     const styleId = { glass: 0, concrete: 1, old: 2, tower: 3, shop: 4 };
     this.frontBuildings = [];
     const wallColor = () => {
@@ -404,12 +408,30 @@ export class World {
       return c;
     };
 
+    // cross streets: open corridors that let you look down side streets
+    this.crossings = [];
+    for (let c = 90 + rng.range(0, 60); c < tr.length - 40; c += rng.range(130, 210)) {
+      this.crossings.push({ s: c, w: st.id === 'aurora' ? 11 : 16 });
+    }
+    const inCorridor = (a, b0, pad = 0) => this.crossings.some((c) => b0 > c.s - c.w / 2 - pad && a < c.s + c.w / 2 + pad);
+    const corridorEnd = (s0) => {
+      const c = this.crossings.find((c) => s0 < c.s + c.w / 2 && s0 + 1 > c.s - c.w / 2 - 40);
+      return c ? c.s + c.w / 2 + 0.2 : s0;
+    };
+
     for (const side of [-1, 1]) {
       let s = -40;
       while (s < tr.length + 40) {
         const style = rng.pick(city.styles);
         const old = style === 'old';
-        const w = old ? rng.range(7, 12) : rng.range(14, 30);
+        let w = old ? rng.range(7, 12) : rng.range(14, 30);
+        // stop at the edge of a cross street
+        const cNext = this.crossings.find((c) => c.s - c.w / 2 > s - 0.01 && c.s - c.w / 2 < s + w + 6);
+        if (cNext) {
+          const room = cNext.s - cNext.w / 2 - s;
+          if (room < 5) { s = cNext.s + cNext.w / 2; continue; }
+          w = Math.min(w, room);
+        }
         const d = old ? rng.range(9, 13) : rng.range(14, 26);
         let H = rng.range(city.height[0], city.height[1]);
         if (!old && rng() < 0.15) H *= 1.5;
@@ -425,28 +447,13 @@ export class World {
         const gb = getGB(sm);
         const u0 = side * (BUILD_U + d / 2);
         this._box(gb, sm, u0, w, d, y0, y1, groundY, fac, col, !old);
+        const b = { s, w, d, H, side, style, groundY, sm, u0, y1, seed, col };
         if (old) {
           this._gable(gb, sm, u0, w, d, y1, rng.range(2.2, 3.4), col, seed);
-        } else {
-          // snow cap and rooftop clutter
-          this._box(gb, sm, u0, w + 0.4, d + 0.4, y1, y1 + 0.35, y1, [1, seed, 0, 1], col, true);
-          if (H > 45 && rng() < 0.75) {
-            const w2 = w * rng.range(0.55, 0.8), d2 = d * rng.range(0.55, 0.8), H2 = H * rng.range(0.15, 0.4);
-            this._box(gb, sm, u0 + side * rng.range(-1, 1), w2, d2, y1, y1 + H2, groundY, [styleId[style], seed + 0.3, lit, 0], col, true);
-            this._box(gb, sm, u0, w2 + 0.3, d2 + 0.3, y1 + H2, y1 + H2 + 0.3, y1, [1, seed, 0, 1], col, true);
-            if (rng() < 0.6) this._aviation(sm, u0, y1 + H2 + 0.3);
-          } else if (H > 35 && rng() < 0.5) {
-            this._aviation(sm, u0, y1 + 0.4);
-          }
-          for (let k = 0; k < 2; k++) {
-            if (rng() < 0.6) {
-              const bw = rng.range(1.5, 4), bh = rng.range(1, 2.5);
-              this._box(gb, sm + rng.range(-w / 4, w / 4), u0 + rng.range(-d / 4, d / 4), bw, bw, y1 + 0.3, y1 + 0.3 + bh, y1, [1, seed, 0, 1], new THREE.Color(0x777777), true);
-            }
-          }
         }
-        this.frontBuildings.push({ s, w, d, H, side, style, groundY, sm, u0 });
-        s += w + (rng() < 0.22 ? rng.range(2.5, 6) : 0.15);
+        this._details(gb, b, rng);
+        this.frontBuildings.push(b);
+        s += w + (rng() < 0.18 ? rng.range(2.5, 6) : 0.15);
       }
 
       // second and far rows (skyline depth)
@@ -454,12 +461,16 @@ export class World {
         let s2 = -60;
         while (s2 < tr.length + 60) {
           const w = rng.range(18, 34), d = rng.range(18, 30);
+          if (inCorridor(s2, s2 + w, 1)) { s2 = corridorEnd(s2) + 1; continue; }
           const H = rng.range(city.height[0], city.height[1]) * rng.range(1.0, 1.8);
           const sm = s2 + w / 2;
           const groundY = tr.baseY(sm) + BANK_TOP;
           const u0 = side * (BUILD_U + 30 + d / 2 + rng.range(0, 10));
           const style = rng.pick(city.styles);
-          this._box(getGB(sm), sm, u0, w, d, groundY - 20, groundY + H, groundY, [styleId[style] ?? 1, rng(), city.lit, 0], new THREE.Color(rng.pick(city.wall)).multiplyScalar(0.8), true);
+          const gb = getGB(sm);
+          const seed = rng();
+          this._box(gb, sm, u0, w, d, groundY - 20, groundY + H, groundY, [styleId[style] ?? 1, seed, city.lit, 0], new THREE.Color(rng.pick(city.wall)).multiplyScalar(0.8), true);
+          this._roofClutter(gb, { sm, u0, w, d, y1: groundY + H, seed, H, side }, rng);
           s2 += w + rng.range(4, 14);
         }
       }
@@ -467,6 +478,7 @@ export class World {
       while (s3 < tr.length + 100) {
         const w = rng.range(25, 50), d = rng.range(25, 45);
         const far = st.id === 'aurora' ? rng.range(45, 90) : rng.range(80, 240);
+        if (inCorridor(s3, s3 + w, 2)) { s3 = corridorEnd(s3) + 2; continue; }
         const Hs = st.id === 'aurora' ? rng.range(6, 14) : rng.range(city.height[0], city.height[1]) * rng.range(1.2, 2.6);
         const sm = s3 + w / 2;
         const groundY = tr.baseY(sm) - 5;
@@ -479,6 +491,10 @@ export class World {
       }
     }
 
+    for (const c of this.crossings) this._crossStreet(c, rng, styleId, wallColor);
+    this._buildStructures(rng);
+    if (st.id !== 'aurora') this._buildTraffic(rng);
+
     for (const gb of chunks.values()) {
       const mesh = new THREE.Mesh(gb.build(), this.mats.facade);
       this.add(mesh, { cast: this.quality.shadows, receive: true });
@@ -486,6 +502,392 @@ export class World {
 
     if (st.id === 'aurora') this._buildMountains();
     this._buildSigns();
+  }
+
+  // Facade and roof detail for a front-row building.
+  _details(gb, b, rng) {
+    const { sm, w, d, side, groundY, y1, style, H, seed } = b;
+    const plain = [5, seed, 0, 0];
+    const front = side * BUILD_U; // street-facing wall
+    const inset = (x) => side * (BUILD_U - x);
+    const pal = [0x8a8f96, 0xb9b4aa, 0x6f7680, 0xd2d4d6, 0x9a8c7c];
+    const slabCol = new THREE.Color(rng.pick(pal));
+    if (style === 'old') {
+      // eaves over the ground floor (snow on top) and a hanging lantern rail
+      this._box(gb, sm, inset(0.65), w - 0.2, 1.3, groundY + 3.0, groundY + 3.22, groundY, plain, new THREE.Color(0x2a1d16), true);
+      if (rng() < 0.5) this._box(gb, sm, inset(0.1), w * 0.7, 0.2, groundY + 3.6, groundY + 4.4, groundY, plain, new THREE.Color(0x1a1412), false);
+      return;
+    }
+    // cornice + thick snow cap
+    this._box(gb, sm, b.u0, w + 0.7, d + 0.7, y1 - 0.5, y1, groundY, plain, b.col.clone().multiplyScalar(0.8), false);
+    this._box(gb, sm, b.u0, w + 0.8, d + 0.8, y1, y1 + 0.32, y1, [1, seed, 0, 1], b.col, true);
+    // shop canopy over the ground floor
+    if (style === 'shop' || style === 'concrete') {
+      const awn = new THREE.Color(rng.pick([0x7a1c18, 0x1f3b6b, 0x245a3a, 0x3a3a3f, 0x8a6a20]));
+      this._box(gb, sm, inset(0.75), w - 0.5, 1.5, groundY + 3.95, groundY + 4.2, groundY, plain, awn, true);
+    }
+    // balconies with AC units (apartment blocks)
+    if (style === 'concrete' && rng() < 0.6) {
+      const floors = Math.floor((H - 5) / 3.2);
+      const panel = new THREE.Color(rng.pick([0xc8ccd0, 0x9aa4ae, 0x707a84, 0xd8d0c0]));
+      for (let k = 1; k <= floors; k++) {
+        const yb = groundY + 4.4 + k * 3.2 - 0.05;
+        this._box(gb, sm, inset(0.55), w - 0.6, 1.1, yb - 0.16, yb, groundY, plain, slabCol, true);
+        this._box(gb, sm, inset(1.07), w - 0.6, 0.07, yb, yb + 1.0, groundY, plain, panel, true);
+        const units = Math.max(1, Math.floor((w - 1) / 3.2));
+        for (let i = 0; i < units; i++) {
+          if (rng() < 0.45) {
+            const so = sm - (w - 0.6) / 2 + (i + 0.5) * ((w - 0.6) / units) + rng.range(-0.6, 0.6);
+            this._box(gb, so, inset(0.35), 0.8, 0.32, yb, yb + 0.58, groundY, plain, new THREE.Color(0xd8dadc), true);
+          }
+          // dividers between flats
+          if (i > 0) {
+            const so = sm - (w - 0.6) / 2 + i * ((w - 0.6) / units);
+            this._box(gb, so, inset(0.55), 0.06, 1.0, yb, yb + 1.9, groundY, plain, panel, false);
+          }
+        }
+      }
+    } else if (style !== 'glass' && style !== 'tower') {
+      // window AC units hung on the facade
+      const rows = Math.min(8, Math.floor((H - 6) / 3.2));
+      for (let k = 1; k <= rows; k++) {
+        const n = Math.floor(rng() * 3);
+        for (let i = 0; i < n; i++) {
+          const so = sm + rng.range(-w / 2 + 1, w / 2 - 1);
+          const yb = groundY + 4.4 + k * 3.2 + 0.15;
+          this._box(gb, so, inset(0.2), 0.8, 0.36, yb, yb + 0.58, groundY, plain, new THREE.Color(0xc9cbcd), true);
+        }
+      }
+    } else if (rng() < 0.6) {
+      // vertical fins on glass towers
+      const n = Math.floor(w / 4.4);
+      for (let i = 0; i <= n; i++) {
+        const so = sm - w / 2 + (i / Math.max(1, n)) * w;
+        this._box(gb, so, inset(0.25), 0.18, 0.5, groundY + 4.0, y1 - 0.5, groundY, plain, b.col.clone().multiplyScalar(0.6), true);
+      }
+    }
+    void front;
+    this._roofClutter(gb, b, rng);
+  }
+
+  // Parapets, water tanks, plant rooms, antennas.
+  _roofClutter(gb, b, rng) {
+    const { sm, u0, w, d, y1, seed } = b;
+    const plain = [5, seed, 0, 0];
+    const yr = y1 + 0.3;
+    const pcol = new THREE.Color(0x6c6f74);
+    // parapet ring
+    this._box(gb, sm, u0 - (d / 2 - 0.15), w, 0.3, yr, yr + 1.0, yr, plain, pcol, true);
+    this._box(gb, sm, u0 + (d / 2 - 0.15), w, 0.3, yr, yr + 1.0, yr, plain, pcol, true);
+    this._box(gb, sm - (w / 2 - 0.15), u0, 0.3, d - 0.6, yr, yr + 1.0, yr, plain, pcol, true);
+    this._box(gb, sm + (w / 2 - 0.15), u0, 0.3, d - 0.6, yr, yr + 1.0, yr, plain, pcol, true);
+    // water tank on legs
+    if (rng() < 0.6) {
+      const ts = sm + rng.range(-w / 4, w / 4), tu = u0 + rng.range(-d / 4, d / 4);
+      this._box(gb, ts, tu, 2.2, 2.2, yr, yr + 1.0, yr, plain, new THREE.Color(0x3a3d42), false);
+      this._box(gb, ts, tu, 2.6, 2.6, yr + 1.0, yr + 3.2, yr, plain, new THREE.Color(rng.pick([0xa7b0b8, 0x5d7f9a, 0xd0c8b0])), true);
+    }
+    // plant room / stair house
+    if (rng() < 0.7) {
+      const pw = rng.range(3, 6);
+      this._box(gb, sm + rng.range(-w / 4, w / 4), u0 + rng.range(-d / 4, d / 4), pw, pw * 0.8, yr, yr + rng.range(2.4, 3.4), yr, plain, new THREE.Color(0x8b8d90), true);
+    }
+    // AC condensers
+    const n = Math.floor(rng() * 4);
+    for (let i = 0; i < n; i++) this._box(gb, sm + rng.range(-w / 3, w / 3), u0 + rng.range(-d / 3, d / 3), 1.2, 0.8, yr, yr + 1.0, yr, plain, new THREE.Color(0xc2c4c6), true);
+    // antenna mast on tall buildings
+    if (b.H > 55 && rng() < 0.5) {
+      this._box(gb, sm, u0, 0.35, 0.35, yr, yr + rng.range(8, 16), yr, plain, new THREE.Color(0xb0b0b0), false);
+    }
+  }
+
+  // Elevated railway with a moving train, and pedestrian footbridges.
+  _buildStructures(rng) {
+    const tr = this.track;
+    const st = this.stage;
+    const plain = [5, 0.5, 0, 0];
+    const gAt = (ss) => tr.baseY(ss) + BANK_TOP + 0.15;
+    const steel = new THREE.Color(st.id === 'golden' ? 0x6d7480 : 0x56606a);
+    if (st.id !== 'aurora' && this.crossings.length > 2) {
+      const c = this.crossings[Math.floor(this.crossings.length / 2)];
+      const gb = this.getGB(c.s);
+      const yD = gAt(c.s) + 9.5;
+      const L = 640;
+      const conc = new THREE.Color(0x8c8a86);
+      this._box(gb, c.s, 0, 9, L, yD - 1.5, yD, yD, plain, conc, true);
+      // rails and catenary masts
+      const vo = (ds) => ({ fs: c.s, ds });
+      this._box(gb, c.s - 4.35, 0, 0.3, L, yD, yD + 1.2, yD, plain, conc, true, vo(-4.35));
+      this._box(gb, c.s + 4.35, 0, 0.3, L, yD, yD + 1.2, yD, plain, conc, true, vo(4.35));
+      for (const off of [-2.6, -1.4, 1.4, 2.6]) this._box(gb, c.s + off, 0, 0.12, L, yD, yD + 0.2, yD, plain, new THREE.Color(0x2a2a2a), false, vo(off));
+      for (let u = -L / 2 + 10; u < L / 2; u += 26) {
+        this._box(gb, c.s - 4.0, u, 0.25, 0.25, yD, yD + 6.2, yD, plain, steel, false, vo(-4.0));
+        this._box(gb, c.s, u, 8.4, 0.2, yD + 6.0, yD + 6.25, yD, plain, steel, false, vo(0));
+        // piers outside the main street
+        if (Math.abs(u) > BUILD_U + 6) this._box(gb, c.s, u, 2.4, 2.4, gAt(c.s) - 3, yD - 1.5, gAt(c.s), plain, conc, false, vo(0));
+        const p = tr.toWorld(c.s, u, yD - 1.7);
+        this.glowPts.pos.push(p.x, p.y, p.z);
+        this.glowPts.col.push(0.35, 0.33, 0.3);
+        this.glowPts.size.push(2.2);
+      }
+      this.lightSpots.push({ p: tr.toWorld(c.s, 0, yD - 2), color: new THREE.Color(0xffe0b0), power: 40 });
+      // the train
+      const group = new THREE.Group();
+      const body = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.75, roughness: 0.3 });
+      const winMat = this.emissive(st.id === 'golden' ? 0xffe2b8 : 0xfff0d0, st.id === 'golden' ? 0.7 : 1.15);
+      const doorMat = new THREE.MeshStandardMaterial({ color: 0x3a3f46, metalness: 0.6, roughness: 0.4, emissive: new THREE.Color(0xfff0d0), emissiveIntensity: 0.25 });
+      this.disposables.push(doorMat);
+      const stripe = new THREE.MeshStandardMaterial({ color: st.id === 'golden' ? 0xf08a1c : 0x3cb84a, roughness: 0.4 });
+      this.disposables.push(body, stripe);
+      const cars = 7;
+      for (let i = 0; i < cars; i++) {
+        const x = (i - (cars - 1) / 2) * 20.2;
+        const car = new THREE.Mesh(new RoundedBoxGeometry(19.8, 3.4, 2.9, 2, 0.25), body);
+        car.position.set(x, 2.25, 0);
+        // separate windows with doors between them
+        for (let k = 0; k < 8; k++) {
+          const wx = x - 8.4 + k * 2.4;
+          const door = k === 2 || k === 5;
+          const win = new THREE.Mesh(new THREE.BoxGeometry(door ? 1.3 : 1.9, door ? 2.2 : 0.95, 2.96), door ? doorMat : winMat);
+          win.position.set(wx, door ? 2.25 : 2.75, 0);
+          group.add(win);
+        }
+        const str = new THREE.Mesh(new THREE.BoxGeometry(19.82, 0.28, 2.92), stripe);
+        str.position.set(x, 1.65, 0);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(19.2, 0.16, 2.6), this.mats.plainSnow);
+        roof.position.set(x, 4.0, 0);
+        group.add(car, str, roof);
+      }
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), this.emissive(0xffffff, 4));
+      head.position.set(((cars - 1) / 2) * 20.2 + 10, 2.0, 0);
+      group.add(head);
+      group.traverse((o) => { if (o.isMesh) o.castShadow = this.quality.shadows; });
+      group.quaternion.setFromAxisAngle(UP, tr.yawAt(c.s));
+      this.add(group);
+      const f = tr.frame(c.s, {});
+      this.train = { group, origin: this._side(c.s, -2, 0, yD), dir: new THREE.Vector3(f.rx, 0, f.rz), speed: 22, loop: 900 };
+    }
+
+    // pedestrian footbridges over the main street (Tokyo style)
+    if (st.id === 'neon' || st.id === 'golden') {
+      const spots = [];
+      for (const target of [0.3, 0.68]) {
+        let s0 = tr.length * target;
+        for (let k = 0; k < 40; k++) {
+          const clear = !tr.kickers.some((f) => s0 > f.s0 - 25 && s0 < f.s1 + 25) && !this.crossings.some((c) => Math.abs(c.s - s0) < 25) && !tr.drops.some((d) => Math.abs(d.s - s0) < 30);
+          if (clear) break;
+          s0 += 7;
+        }
+        spots.push(s0);
+      }
+      const blue = new THREE.Color(0x2f6fb0);
+      for (const b of spots) {
+        const gb = this.getGB(b);
+        const yb = gAt(b) + 5.0;
+        const span = (BUILD_U - 0.6) * 2;
+        this._box(gb, b, 0, 3.2, span, yb - 0.65, yb, yb, plain, steel, true);
+        this._box(gb, b - 1.55, 0, 0.12, span, yb, yb + 1.2, yb, plain, blue, true);
+        this._box(gb, b + 1.55, 0, 0.12, span, yb, yb + 1.2, yb, plain, blue, true);
+        for (const side of [-1, 1]) {
+          for (const ds of [-1.2, 1.2]) this._box(gb, b + ds, side * (EDGE_U + 1.2), 0.45, 0.45, gAt(b + ds) - 1, yb - 0.65, gAt(b), plain, steel, false);
+          // stairs down onto the pavement
+          const n = 14;
+          const uS = side * (BUILD_U - 1.3);
+          for (let i = 0; i < n; i++) {
+            const ss = b + 1.6 + i * 0.62;
+            const top = yb - ((i + 1) / n) * (yb - gAt(b + 1.6 + n * 0.62));
+            this._box(gb, ss + 0.31, uS, 0.62, 1.8, gAt(ss) - 0.5, top, gAt(ss), plain, steel, true);
+          }
+          this._box(gb, b + 1.6 + n * 0.31, uS + side * 0.95, n * 0.62, 0.08, gAt(b + 6) , yb + 0.9, gAt(b), plain, blue, false);
+        }
+        // direction sign on the railing
+        const tex = bannerTexture(st.id === 'golden' ? 'CENTRAL STA.  中央駅 →' : '新宿駅  SHINJUKU STA. →', [0x1d4fa0, 0x245cb8], 0xffffff);
+        const mat = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.9, 0.9, 0.9), side: THREE.DoubleSide });
+        this.disposables.push(mat, tex);
+        const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 9 * 0.1875), mat);
+        sign.position.copy(tr.toWorld(b - 1.63, 0, yb + 0.25));
+        sign.rotation.y = tr.yawAt(b);
+        this.add(sign);
+        for (const u of [-6, 0, 6]) {
+          const p = tr.toWorld(b, u, yb - 0.75);
+          this.glowPts.pos.push(p.x, p.y, p.z);
+          this.glowPts.col.push(0.45, 0.45, 0.42);
+          this.glowPts.size.push(1.6);
+          this.lightSpots.push({ p, color: new THREE.Color(0xfff2d8), power: 12 });
+        }
+      }
+    }
+  }
+
+  // Point on a straight side street: frame of the main track at s, offset ds along it.
+  _side(s, ds, u, y, out = new THREE.Vector3()) {
+    const f = this.track.frame(s, {});
+    return this.track.toWorld(s, u, y, out).add(V(f.tx * ds, 0, f.tz * ds));
+  }
+
+  // Cars driving up and down the side streets, with head and tail lights.
+  _buildTraffic(rng) {
+    const tr = this.track;
+    const cars = [];
+    for (const c of this.crossings) {
+      for (const side of [-1, 1]) {
+        for (const lane of [-1, 1]) {
+          if (rng() < 0.25) continue;
+          const f = tr.frame(c.s, {});
+          cars.push({
+            s: c.s + lane * 2.2, cs: c.s, side, lane,
+            gY: tr.baseY(c.s + lane * 2.2) + BANK_TOP + 0.15,
+            speed: rng.range(7, 13), phase: rng() * 200, len: 190,
+            R: new THREE.Vector3(f.rx, 0, f.rz), yaw: tr.yawAt(c.s),
+            color: new THREE.Color(rng.pick([0xb8261e, 0x1d3f8a, 0xe8e8e8, 0x1a1a1f, 0xf2c20f, 0x8a8f99])),
+          });
+        }
+      }
+    }
+    if (!cars.length) return;
+    const body = new RoundedBoxGeometry(4.3, 1.0, 1.85, 2, 0.18).translate(0, 0.75, 0);
+    const cab = new RoundedBoxGeometry(2.2, 0.6, 1.6, 2, 0.15).translate(-0.2, 1.5, 0);
+    const bodyMat = new THREE.MeshStandardMaterial({ metalness: 0.6, roughness: 0.3 });
+    this.disposables.push(bodyMat);
+    this.trafficBody = new THREE.InstancedMesh(body, bodyMat, cars.length);
+    this.trafficCab = new THREE.InstancedMesh(cab, this.mats.glass, cars.length);
+    cars.forEach((c, i) => this.trafficBody.setColorAt(i, c.color));
+    for (const m of [this.trafficBody, this.trafficCab]) { m.frustumCulled = false; this.group.add(m); }
+    const n = cars.length * 2;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    const col = new Float32Array(n * 3);
+    const size = new Float32Array(n);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('size', new THREE.BufferAttribute(size, 1));
+    cars.forEach((c, i) => {
+      // driving away from the main street shows tail lights, towards it head lights
+      const away = c.side * c.lane > 0;
+      const lc = away ? [0.9, 0.08, 0.04] : [0.95, 0.9, 0.75];
+      for (let k = 0; k < 2; k++) { col.set(lc, (i * 2 + k) * 3); size[i * 2 + k] = away ? 1.0 : 1.6; }
+      c.away = away;
+    });
+    this.trafficLights = new THREE.Points(g, null);
+    this.trafficLights.frustumCulled = false;
+    this.traffic = cars;
+    this._trafficM = new THREE.Matrix4();
+  }
+
+  _updateTraffic(t) {
+    const cars = this.traffic;
+    if (!cars) return;
+    if (!this.trafficLights.material) {
+      this.trafficLights.material = this.glowMat;
+      this.group.add(this.trafficLights);
+    }
+    const m = this._trafficM;
+    const q = new THREE.Quaternion();
+    const pos = this.trafficLights.geometry.attributes.position;
+    const tr = this.track;
+    cars.forEach((c, i) => {
+      const d = (t * c.speed + c.phase) % c.len;
+      const u = c.away ? BUILD_U + 4 + d : BUILD_U + 4 + c.len - d;
+      const p = this._side(c.cs, c.lane * 2.2, c.side * u, c.gY);
+      // car faces along +/-R
+      const dirSign = c.away ? c.side : -c.side;
+      q.setFromAxisAngle(UP, c.yaw + (dirSign > 0 ? 0 : Math.PI));
+      m.compose(p, q, V(1, 1, 1));
+      this.trafficBody.setMatrixAt(i, m);
+      this.trafficCab.setMatrixAt(i, m);
+      // lights at the end facing the main street
+      const toMain = -c.side;
+      for (let k = 0; k < 2; k++) {
+        const lp = this._side(c.cs, c.lane * 2.2 + (k ? 0.7 : -0.7), c.side * (u + toMain * 2.2), c.gY + 0.8);
+        pos.setXYZ(i * 2 + k, lp.x, lp.y, lp.z);
+      }
+    });
+    this.trafficBody.instanceMatrix.needsUpdate = true;
+    this.trafficCab.instanceMatrix.needsUpdate = true;
+    pos.needsUpdate = true;
+  }
+
+  // Side street: buildings, ground, lamps and traffic signals.
+  _crossStreet(c, rng, styleId, wallColor) {
+    const tr = this.track;
+    const st = this.stage;
+    const city = st.city;
+    const gAt = (ss) => tr.baseY(ss) + BANK_TOP + 0.15;
+    const half = c.w / 2;
+    const reach = st.id === 'aurora' ? 90 : 220;
+    const f = tr.frame(c.s, {});
+    for (const side of [-1, 1]) {
+      // buildings lining both sides of the side street
+      for (const sd of [-1, 1]) {
+        let u = BUILD_U + 0.5;
+        while (u < reach) {
+          const front = rng.range(14, 28), depth = rng.range(14, 22);
+          const style = rng.pick(city.styles);
+          const old = style === 'old';
+          const H = old ? rng.range(7, 13) : rng.range(city.height[0], city.height[1]) * rng.range(0.7, 1.3);
+          const sm = c.s + sd * (half + depth / 2);
+          const u0 = side * (u + front / 2);
+          const gb = this.getGB(sm);
+          const seed = rng();
+          const col = wallColor();
+          const gY = gAt(sm);
+          const opt = { fs: c.s, ds: sd * (half + depth / 2) };
+          this._box(gb, sm, u0, depth, front, gY - 8, gY + H, gY, [styleId[style], seed, clamp(city.lit * rng.range(0.7, 1.3), 0, 0.95), 0], col, !old, opt);
+          if (old) this._gable(gb, sm, u0, depth, front, gY + H, 2.6, col, seed, opt);
+          else this._box(gb, sm, u0, depth + 0.6, front + 0.6, gY + H, gY + H + 0.3, gY + H, [1, seed, 0, 1], col, true, opt);
+          u += front + rng.range(0.2, 3);
+        }
+      }
+      // snowy ground of the side street
+      const pos = [], idx = [], col = [], uv = [];
+      const steps = Math.ceil((reach - BUILD_U) / 6);
+      for (let i = 0; i <= steps; i++) {
+        const u = side * (BUILD_U - 1 + i * 6);
+        for (const sd of [-1, 1]) {
+          const ss = c.s + sd * (half + 0.6);
+          const p = this._side(c.s, sd * (half + 0.6), u, gAt(ss) - 0.06);
+          pos.push(p.x, p.y, p.z);
+          const k = 0.92 - 0.1 * Math.abs(sd);
+          col.push(k, k, k * 1.02);
+          uv.push(u / 3, (c.s + sd * half) / 3);
+        }
+        if (i > 0) {
+          const a = (i - 1) * 2;
+          if (side > 0) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+          else idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      // make sure it faces up
+      if (g.attributes.normal.getY(0) < 0) {
+        const ia = g.index.array;
+        for (let i = 0; i < ia.length; i += 3) { const t = ia[i + 1]; ia[i + 1] = ia[i + 2]; ia[i + 2] = t; }
+        g.computeVertexNormals();
+      }
+      this.add(new THREE.Mesh(g, this.mats.snow), { receive: true });
+      // receding street lights
+      for (let u = BUILD_U + 12; u < reach; u += 22) {
+        for (const sd of [-1, 1]) {
+          const p = this._side(c.s, sd * (half - 1.2), side * u, gAt(c.s + sd * (half - 1.2)) + 5.6);
+          this.glowPts.pos.push(p.x, p.y, p.z);
+          const lc = new THREE.Color(city.lamp).multiplyScalar(0.5);
+          this.glowPts.col.push(lc.r, lc.g, lc.b);
+          this.glowPts.size.push(3.0);
+          this.sideLamps.push(p);
+        }
+      }
+      // traffic signal on the corner facing the rider
+      if (st.id !== 'aurora') {
+        const sp = c.s - half - 1.2;
+        const base = tr.toWorld(sp, side * (EDGE_U + 1.4), gAt(sp));
+        this.signals.push({ base, yaw: tr.yawAt(sp), side, s: sp });
+      }
+    }
+    void f;
   }
 
   _aviation(s, u, y) {
@@ -685,7 +1087,11 @@ export class World {
     this._instanced(armGeo, this.mats.darkMetal, arms);
     this._instanced(headGeo, this.mats.darkMetal, heads);
     this._instanced(bulbGeo, this.emissive(st.city.lamp, 6), bulbs);
-    if (st.id !== 'golden') this._lightCones(bulbs, lampColor);
+    if (st.id !== 'golden') {
+      this._lightCones(bulbs, lampColor);
+      this._lightCones(this.sideLamps.map((p) => new THREE.Matrix4().makeTranslation(p.x, p.y, p.z)), lampColor);
+    }
+    this._buildSignals();
 
     // --- vending machines
     if (P.vending > 0) {
@@ -800,6 +1206,32 @@ export class World {
       this._instanced(new THREE.CylinderGeometry(0.28, 0.28, 0.8, 10), this.mats.darkMetal, boxList);
     }
     this._buildWires();
+  }
+
+  // Traffic lights at side-street corners (cycle green / amber / red).
+  _buildSignals() {
+    if (!this.signals.length) return;
+    const poleM = [], armM = [], headM = [];
+    const lampM = [[], [], []];
+    const q = new THREE.Quaternion();
+    for (const sg of this.signals) {
+      q.setFromAxisAngle(UP, sg.yaw);
+      const m = (x, y, z) => new THREE.Matrix4().compose(sg.base.clone().add(new THREE.Vector3(x, y, z).applyQuaternion(q)), q, V(1, 1, 1));
+      poleM.push(m(0, 0, 0));
+      armM.push(m(-sg.side * 2.4, 5.4, 0));
+      for (const off of [-sg.side * 4.4]) {
+        headM.push(m(off, 5.4, 0));
+        // three lamps facing the rider (+Z of the head faces uphill)
+        for (let i = 0; i < 3; i++) lampM[i].push(m(off + (i - 1) * 0.42, 5.4, 0.2));
+      }
+    }
+    this._instanced(new THREE.CylinderGeometry(0.09, 0.12, 5.6, 8).translate(0, 2.8, 0), this.mats.darkMetal, poleM, { cast: this.quality.shadows });
+    this._instanced(new THREE.BoxGeometry(4.8, 0.12, 0.12), this.mats.darkMetal, armM);
+    this._instanced(new RoundedBoxGeometry(1.45, 0.48, 0.32, 2, 0.06), this.mats.darkMetal, headM);
+    this.signalMats = [0x2bff88, 0xffb020, 0xff3030].map((c) => this.emissive(c, 0.15));
+    const lg = new THREE.CircleGeometry(0.15, 16);
+    lampM.forEach((list, i) => this._instanced(lg, this.signalMats[i], list));
+    this.signalBase = [0x2bff88, 0xffb020, 0xff3030].map((c) => new THREE.Color(c));
   }
 
   // Soft additive light cones under lamps (lit falling snow / haze).
@@ -965,10 +1397,14 @@ export class World {
         const tex = bannerTexture('MEGA AIR', [0xff2d6a, 0xffa02d], 0xffffff);
         const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, color: new THREE.Color(1.3, 1.3, 1.3) });
         this.disposables.push(mat, tex);
-        const ban = new THREE.Mesh(new THREE.PlaneGeometry(k.w + 1.2, (k.w + 1.2) * 0.1875), mat);
-        ban.position.copy(tr.toWorld(sLip - 0.6, k.u0, yLip + 4.2));
-        ban.rotation.y = yaw;
-        this.add(ban);
+        // two single-sided planes so the text reads correctly from both sides
+        mat.side = THREE.FrontSide;
+        for (const flip of [0, Math.PI]) {
+          const ban = new THREE.Mesh(new THREE.PlaneGeometry(k.w + 1.2, (k.w + 1.2) * 0.1875), mat);
+          ban.position.copy(tr.toWorld(sLip - 0.6 + (flip ? 0.02 : 0), k.u0, yLip + 4.2));
+          ban.rotation.y = yaw + flip;
+          this.add(ban);
+        }
       }
       this.groundGlows.push({ s: sLip - 1, u: k.u0, size: k.w + 3, color: accent, k: 0.22, follow: true });
     }
@@ -1300,6 +1736,17 @@ export class World {
     if (this.aviationMat) this.aviationMat.opacity = Math.sin(t * 3) > 0.2 ? 1 : 0.1;
     if (this.carHazardMat) this.carHazardMat.color.setRGB(2.5, 0.3, 0.1).multiplyScalar(0.5 + 0.5 * (Math.sin(t * 5) > 0 ? 1 : 0.2));
     this._updateTokens(t);
+    this._updateTraffic(t);
+    if (this.signalMats) {
+      const ph = t % 18;
+      const on = ph < 8 ? 0 : ph < 10 ? 1 : 2;
+      this.signalMats.forEach((m, i) => m.color.copy(this.signalBase[i]).multiplyScalar(i === on ? 3.2 : 0.08));
+    }
+    if (this.train) {
+      const T = this.train;
+      const x = ((t * T.speed) % T.loop) - T.loop / 2;
+      T.group.position.copy(T.origin).addScaledVector(T.dir, x);
+    }
     // dynamic point lights: brightest candidates near the rider
     if (this.pointLights.length) {
       this._lightTimer = (this._lightTimer || 0) - dt;

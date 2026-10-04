@@ -173,6 +173,12 @@ export class UI {
       case 'play':
       case 'countdown':
         if (any('Escape', 'KeyP', 'PadStart')) g.pause();
+        if (any('KeyC', 'PadSelect')) {
+          const m = g.rig.cycleMode();
+          try { localStorage.setItem('cp_cam', JSON.stringify(m)); } catch { /* ignore */ }
+          const label = { dynamic: 'カメラ：ダイナミック', chase: 'カメラ：チェイス', pov: 'カメラ：ヘルメット視点' }[m];
+          this.trick(label, 0, 1, 'small');
+        }
         break;
       case 'paused':
         if (any('Escape', 'KeyP', 'PadStart', 'PadB')) { g.resume(); break; }

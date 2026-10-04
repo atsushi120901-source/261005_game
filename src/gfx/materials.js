@@ -97,6 +97,44 @@ export function createFacadeMaterial(stage) {
         uniform float uTime;
         uniform float uNight;
         ${HASH}
+        float vn2(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
+          return mix(mix(h12(i),h12(i+vec2(1,0)),u.x), mix(h12(i+vec2(0,1)),h12(i+vec2(1,1)),u.x), u.y); }
+        // Interior mapping: ray-trace a box room behind the window.
+        // w: window coords 0..1, size: window size in metres, depth: room depth in metres,
+        // Vt: view direction in facade tangent space (z points out of the wall).
+        vec3 interiorRoom(vec2 w, vec2 size, float depth, vec3 Vt, vec3 L, float rnd, float kind) {
+          vec3 o = vec3(w, 0.0);
+          vec3 d = vec3(Vt.x / size.x, Vt.y / size.y, Vt.z / depth);
+          float tx = ((d.x > 0.0 ? 1.0 : 0.0) - o.x) / (abs(d.x) < 1e-5 ? 1e-5 : d.x);
+          float ty = ((d.y > 0.0 ? 1.0 : 0.0) - o.y) / (abs(d.y) < 1e-5 ? 1e-5 : d.y);
+          float tz = -1.0 / d.z;
+          float t = min(min(tx, ty), tz);
+          vec3 h = o + d * t;
+          vec3 c;
+          if (t == tz) {
+            // back wall with furniture silhouettes and a picture
+            c = L * 0.85;
+            float fx = 0.5 + (rnd - 0.5) * 0.5;
+            float sofa = step(h.y, 0.28 + 0.12 * rnd) * step(abs(h.x - fx), 0.28);
+            float shelf = step(0.6, rnd) * step(abs(h.x - (1.0 - fx)), 0.12) * step(h.y, 0.75);
+            float pic = step(abs(h.x - fx), 0.1) * step(abs(h.y - 0.62), 0.08);
+            if (kind > 1.5) { sofa = step(h.y, 0.45) * step(0.12, fract(h.x * 3.0)); shelf = 0.0; pic = 0.0; }
+            if (kind > 0.5 && kind < 1.5) { sofa = step(h.y, 0.3) * step(0.3, fract(h.x * 2.5 + rnd)); shelf = 0.0; }
+            c *= 1.0 - 0.65 * clamp(sofa + shelf, 0.0, 1.0);
+            c *= 1.0 - 0.35 * pic;
+          } else if (t == tx) {
+            c = L * (0.5 + 0.3 * (1.0 + h.z));
+          } else if (d.y > 0.0) {
+            // ceiling with a lamp (office: fluorescent panels)
+            float lamp = kind > 0.5 ? step(0.75, fract(h.x * 2.0)) * step(0.5, fract(h.z * 3.0)) * 0.8
+                                    : smoothstep(0.22, 0.0, length(vec2(h.x - 0.5, h.z + 0.45)));
+            c = L * (0.55 + 2.2 * lamp);
+          } else {
+            // floor (planks / carpet)
+            c = L * 0.32 * (0.85 + 0.15 * step(0.5, fract(h.x * 5.0 + rnd)));
+          }
+          return c * mix(1.0, 0.6, clamp(-h.z, 0.0, 1.0));
+        }
         `
       )
       .replace(
@@ -112,14 +150,28 @@ export function createFacadeMaterial(stage) {
           float litR = floor(vFac.z * 100.0 + 0.5) / 100.0;
           vec2 p = vFUv;
           vec3 wall = diffuseColor.rgb;
-          // grime / streaks
-          float streak = h12(vec2(floor(p.x*3.0), seed*91.0));
-          wall *= 0.86 + 0.14*streak;
-          wall *= 0.92 + 0.08*smoothstep(0.0, 6.0, p.y);
+          // tangent frame of the facade from screen derivatives (for interior parallax)
+          vec3 dp1 = dFdx(vWPos2), dp2 = dFdy(vWPos2);
+          vec2 duv1 = dFdx(p), duv2 = dFdy(p);
+          vec3 Nw = normalize(cross(dp1, dp2));
+          if (dot(Nw, cameraPosition - vWPos2) < 0.0) Nw = -Nw;
+          vec3 dp2p = cross(dp2, Nw), dp1p = cross(Nw, dp1);
+          float det = dot(dp1, dp2p);
+          vec3 Tw = (dp2p * duv1.x + dp1p * duv2.x) * sign(det);
+          vec3 Bw = (dp2p * duv1.y + dp1p * duv2.y) * sign(det);
+          vec3 Vw = normalize(vWPos2 - cameraPosition);
+          vec3 Vt = vec3(dot(Vw, normalize(Tw + 1e-6)), dot(Vw, normalize(Bw + 1e-6)), min(dot(Vw, Nw), -0.05));
+          float camDist = length(vWPos2 - cameraPosition);
+
           if (vFac.w > 0.5) {
-            // snow roof cap
-            diffuseColor.rgb = vec3(0.93, 0.95, 1.0);
+            // snow caps on roofs, ledges and sills
+            diffuseColor.rgb = vec3(0.93, 0.95, 1.0) * (0.92 + 0.08 * vn2(p * 3.0));
             fRough = 0.8;
+          } else if (style > 4.5) {
+            // plain props: AC units, balcony slabs, parapets, awnings, tanks
+            float grime = vn2(p * vec2(1.5, 0.6) + seed * 7.0);
+            diffuseColor.rgb = wall * (0.85 + 0.2 * grime);
+            fRough = 0.55;
           } else {
             vec2 cs; vec2 wf;
             if (style < 0.5) { cs = vec2(2.2, 3.6); wf = vec2(0.94, 0.86); }        // glass
@@ -127,6 +179,24 @@ export function createFacadeMaterial(stage) {
             else if (style < 2.5) { cs = vec2(2.4, 2.9); wf = vec2(0.5, 0.48); }    // old town
             else if (style < 3.5) { cs = vec2(1.4, 4.0); wf = vec2(0.78, 0.92); }   // tower
             else { cs = vec2(3.0, 3.2); wf = vec2(0.6, 0.5); }                      // shop
+
+            // ---- wall surface: panel joints, rain stains, weathering
+            float stain = vn2(vec2(p.x * 1.7, p.y * 0.12) + seed * 31.0);
+            float blotch = vn2(p * 0.45 + seed * 17.0);
+            wall *= 0.78 + 0.22 * blotch;
+            wall *= 1.0 - 0.18 * smoothstep(0.45, 0.85, stain);
+            if (style > 0.5 && style < 1.5 || style > 3.5) {
+              vec2 pj = abs(fract(p / vec2(1.8, 1.6)) - 0.5);
+              wall *= 1.0 - 0.12 * step(0.47, max(pj.x, pj.y)) * step(camDist, 60.0);
+            }
+            if (style > 1.5 && style < 2.5) {
+              // vertical wooden boards on the lower part, plaster above
+              float board = step(0.9, fract(p.x * 4.0));
+              wall *= p.y < 3.0 ? (0.75 - 0.2 * board) : 1.05;
+            }
+            if (style < 0.5 || (style > 2.5 && style < 3.5)) wall = mix(wall, vec3(0.16, 0.17, 0.19), 0.4); // metal mullions
+            wall *= 0.9 + 0.1 * smoothstep(0.0, 6.0, p.y);
+
             float groundH = (style > 3.5 || style > 0.5 && style < 1.5) ? 4.4 : (style > 1.5 && style < 2.5 ? 3.2 : 0.0);
             vec2 q = vec2(p.x, p.y - groundH);
             vec2 cell = floor(q / cs);
@@ -137,28 +207,57 @@ export function createFacadeMaterial(stage) {
             float detail = 1.0 - smoothstep(0.1, 0.28, max(fw.x, fw.y));
             vec2 e0 = smoothstep(m0 - fw, m0 + fw, f) * (1.0 - smoothstep(1.0 - m0 - fw, 1.0 - m0 + fw, f));
             float win = mix(wf.x * wf.y, e0.x * e0.y, detail);
-            float sill = step(m0.x - 0.03, f.x) * step(f.x, 1.03 - m0.x) * step(m0.y - 0.06, f.y) * step(f.y, m0.y) * detail;
+            float sill = step(m0.x - 0.03, f.x) * step(f.x, 1.03 - m0.x) * step(m0.y - 0.07, f.y) * step(f.y, m0.y) * detail;
             float hh = h12(cell + seed * 37.0);
             float lit = mix(litR, step(hh, litR), detail) * step(0.0, q.y);
             float tone = mix(0.5, h12(cell * 1.7 + seed * 11.0), detail);
             vec3 lc = mix(uWarm, uCool, mix(0.38, step(0.62, tone), detail));
-            // curtains / room depth variation
-            float curtain = smoothstep(0.2, 0.0, abs(f.x - 0.5) - 0.25 + 0.1*sin(f.y*20.0 + hh*10.0)) * step(0.5, h12(cell+3.3)) * detail;
-            float inten = (0.35 + 1.0 * tone) * (1.0 - 0.45*curtain);
+            float inten = 0.35 + 1.0 * tone;
             // flicker on a few windows
             inten *= 1.0 - 0.6 * step(0.985, hh) * step(0.5, sin(uTime*13.0 + hh*50.0)) * detail;
             vec3 glass = vec3(0.03, 0.04, 0.06);
             if (style < 0.5 || (style > 2.5 && style < 3.5)) glass = vec3(0.05, 0.08, 0.12);
+
+            // window-local coordinates and interior room seen through the glass
+            vec2 w = clamp((f - m0) / wf, 0.0, 1.0);
+            float office = (style < 0.5 || (style > 2.5 && style < 3.5)) ? 1.0 : 0.0;
+            float rnd = h12(cell * 3.1 + seed * 5.0);
+            vec3 lightCol = lc * inten * uNight * lit + vec3(0.012, 0.014, 0.02) * (1.0 - lit);
+            vec3 room = interiorRoom(w, cs * wf, office > 0.5 ? 5.0 : 3.2, Vt, lightCol, rnd, office);
+            // curtains / blinds
+            float cur = step(0.55, h12(cell + 3.3));
+            if (office > 0.5) {
+              float blinds = step(0.5, fract(w.y * 22.0)) * step(0.7, rnd) * step(w.y, 0.35 + rnd * 0.6);
+              room = mix(room, lightCol * 0.55, blinds * 0.85);
+            } else {
+              float cw = 0.18 + 0.2 * rnd;
+              float folds = 0.75 + 0.25 * sin(w.x * 60.0 + rnd * 9.0);
+              float drape = cur * (step(w.x, cw) + step(1.0 - cw, w.x));
+              room = mix(room, lightCol * 0.7 * folds * vec3(1.0, 0.9, 0.8), clamp(drape, 0.0, 1.0));
+            }
+            // flat average far away
+            vec3 roomAvg = lightCol * 0.75;
+            room = mix(roomAvg, room, detail);
+            // window frames / mullions
+            float frameW = office > 0.5 ? 0.0 : (step(abs(w.x - 0.5), 0.018) + (style > 0.5 && style < 1.5 ? step(abs(w.y - 0.68), 0.02) : 0.0));
+            float edge = 1.0 - step(0.025, w.x) * step(w.x, 0.975) * step(0.025, w.y) * step(w.y, 0.975);
+            float frame = clamp(frameW + edge, 0.0, 1.0) * detail;
+
             if (q.y < 0.0) {
               // ground floor
               if (style > 3.5 || (style > 0.5 && style < 1.5)) {
-                float shopWin = step(0.6, p.y) * step(p.y, 3.4) * step(0.12, fract(p.x/6.0)) * step(fract(p.x/6.0), 0.88);
-                float awning = step(3.5, p.y) * step(p.y, 4.2);
-                vec3 sc = mix(uWarm, vec3(1.0,0.9,0.8), h12(vec2(floor(p.x/6.0), seed)) * 0.6);
-                diffuseColor.rgb = mix(wall * 0.6, glass, shopWin);
-                diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.6,0.08,0.06), vec3(0.08,0.2,0.5), step(0.5, h12(vec2(seed, 2.0)))), awning);
-                fEmis += sc * shopWin * 0.85 * uNight * step(0.25, h12(vec2(floor(p.x/6.0), seed+1.0)));
-                fRough = mix(0.85, 0.15, shopWin);
+                float bay = fract(p.x / 6.0);
+                float shopWin = step(0.5, p.y) * step(p.y, 3.4) * step(0.1, bay) * step(bay, 0.9);
+                float on = step(0.25, h12(vec2(floor(p.x/6.0), seed+1.0)));
+                vec3 sc = mix(uWarm, vec3(1.0,0.9,0.8), h12(vec2(floor(p.x/6.0), seed)) * 0.6) * (0.85 * uNight * on + 0.04);
+                vec2 sw = vec2((bay - 0.1) / 0.8, (p.y - 0.5) / 2.9);
+                vec3 shop = interiorRoom(clamp(sw, 0.0, 1.0), vec2(4.8, 2.9), 5.0, Vt, sc, h12(vec2(floor(p.x/6.0), seed + 4.0)), 2.0);
+                float sframe = 1.0 - step(0.012, sw.x) * step(sw.x, 0.988) * step(0.02, sw.y) * step(sw.y, 0.98);
+                diffuseColor.rgb = mix(wall * 0.55, glass, shopWin);
+                fEmis += shop * shopWin * (1.0 - sframe);
+                diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.08), sframe * shopWin);
+                fRough = mix(0.85, 0.1, shopWin);
+                fMetal = 0.4 * shopWin;
               } else if (style > 1.5 && style < 2.5) {
                 // old town: wooden lattice + warm paper glow
                 float lat = step(0.85, fract(p.x*2.5)) + step(0.85, fract(p.y*2.5));
@@ -174,14 +273,15 @@ export function createFacadeMaterial(stage) {
               col = mix(col, vec3(0.9,0.93,1.0), sill * (1.0 - win));
               // floor slab lines
               col *= 1.0 - 0.25 * step(0.97, fract(q.y / cs.y)) * (1.0 - win);
+              col = mix(col, vec3(0.1, 0.1, 0.11), frame * win);
               diffuseColor.rgb = col;
-              fRough = mix(0.88, 0.08, win);
-              fMetal = mix(0.0, 0.6, win * (1.0 - lit));
-              fEmis += lc * lit * win * inten * uNight;
+              fRough = mix(0.88, 0.06, win * (1.0 - frame));
+              fMetal = mix(0.0, 0.55, win * (1.0 - frame));
+              fEmis += room * win * (1.0 - frame);
               if (style > 1.5 && style < 2.5) {
                 // shoji lattice on old town windows
                 float lat2 = step(0.88, fract(f.x * 3.0)) + step(0.88, fract(f.y * 3.0));
-                fEmis *= 1.0 - 0.7 * clamp(lat2, 0.0, 1.0);
+                fEmis *= 1.0 - 0.7 * clamp(lat2, 0.0, 1.0) * detail;
               }
             }
           }

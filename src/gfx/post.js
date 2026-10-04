@@ -70,6 +70,42 @@ const FinalShader = {
     }`,
 };
 
+// Screen-space light shafts streaming from the sun through gaps between buildings.
+const GodRayShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uSun: { value: new THREE.Vector2(0.5, 0.5) },
+    uStrength: { value: 0 },
+    uColor: { value: new THREE.Color(1, 0.75, 0.45) },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uStrength; uniform vec3 uColor;
+    varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main(){
+      vec3 base = texture2D(tDiffuse, vUv).rgb;
+      if (uStrength <= 0.001) { gl_FragColor = vec4(base, 1.0); return; }
+      const int N = 48;
+      vec2 delta = (vUv - uSun) * (0.92 / float(N));
+      vec2 c = vUv - delta * hash(vUv * 731.0);
+      float illum = 1.0;
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < N; i++) {
+        c -= delta;
+        vec3 sm = texture2D(tDiffuse, clamp(c, 0.0, 1.0)).rgb;
+        float l = max(dot(sm, vec3(0.3, 0.59, 0.11)) - 0.9, 0.0);
+        acc += uColor * min(l, 4.0) * illum;
+        illum *= 0.962;
+      }
+      float fall = 1.0 - smoothstep(0.0, 0.9, length((vUv - uSun) * vec2(1.6, 1.0)));
+      gl_FragColor = vec4(base + acc / float(N) * uStrength * (0.4 + 0.6 * fall), 1.0);
+    }`,
+};
+
+const _sp = new THREE.Vector3();
+const _cd = new THREE.Vector3();
+
 export class PostFX {
   constructor(renderer, scene, camera, quality) {
     this.renderer = renderer;
@@ -84,6 +120,9 @@ export class PostFX {
     this.composer.addPass(this.renderPass);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.8, 0.5, 0.8);
     this.bloom.enabled = quality.bloom;
+    this.godrays = new ShaderPass(GodRayShader);
+    this.godrays.enabled = false;
+    this.composer.addPass(this.godrays);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.final = new ShaderPass(FinalShader);
@@ -108,6 +147,19 @@ export class PostFX {
     this.u.uContrast.value = g.contrast;
     this.u.uVignette.value = g.vignette;
     this.renderer.toneMappingExposure = stage.exposure;
+    this.godRayStrength = this.quality.bloom ? stage.godRays || 0 : 0;
+    this.godrays.enabled = this.godRayStrength > 0;
+  }
+
+  // Place the light-shaft origin at the sun's screen position.
+  updateSun(camera, sunDir) {
+    if (!this.godrays.enabled) return;
+    const p = _sp.copy(camera.position).addScaledVector(sunDir, 1000).project(camera);
+    camera.getWorldDirection(_cd);
+    const facing = _cd.dot(sunDir);
+    this.godrays.uniforms.uSun.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
+    const onScreen = 1 - Math.min(1, Math.max(0, Math.max(Math.abs(p.x), Math.abs(p.y)) - 1) * 1.2);
+    this.godrays.uniforms.uStrength.value = this.godRayStrength * Math.max(0, facing) * onScreen;
   }
   setSize(w, h) {
     this.composer.setSize(w, h);
