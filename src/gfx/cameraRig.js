@@ -173,7 +173,7 @@ export class CameraRig {
       const a = this.inspectAngle ?? 0.6;
       const d = this.inspectDist ?? 4.2;
       this.camera.position.set(p.x + Math.cos(a) * d, p.y + (this.inspectH ?? 1.0), p.z + Math.sin(a) * d);
-      this.look.set(p.x, p.y + 0.85, p.z);
+      this.look.set(p.x, p.y + (this.inspectLook ?? 0.85), p.z);
       this.camera.lookAt(this.look);
       this.fov = 35;
     } else if (this.mode === 'showcase') {

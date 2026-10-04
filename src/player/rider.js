@@ -8,6 +8,8 @@ const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _f = {};
+const _sp = new THREE.Vector3();
+const _sn = new THREE.Vector3();
 const _g = { gs: 0, gu: 0 };
 
 const SPIN_POINTS = [0, 150, 400, 800, 1300, 2000, 2800, 3800, 5000, 6400];
@@ -422,6 +424,7 @@ export class Rider {
     const t = this.trick;
     const perfect = alignErr < 0.18 && flipErr < 0.25;
     this.emit('land', { impact, perfect, sketchy, trick: t, alignErr });
+    this.char.impulse?.(impact / 12 + (sketchy ? 0.3 : 0));
     this.fx?.burst(this.position, Math.min(1.5, impact / 10 + 0.3));
     this.audio?.play('land', Math.min(1, impact / 14 + 0.25));
     this.trick = null;
@@ -622,6 +625,15 @@ export class Rider {
     }
     const wind = _v.copy(this.velocity).multiplyScalar(-2.2);
     wind.y += 2;
-    ch.update(dt, { fast, wind: wind.clone(), vibration: this.state === 'grind' ? 1 : this.state === 'ground' ? clamp(sp / 30, 0, 1) * 0.4 : 0 });
+    // contact shadow straight below the rider
+    const tr = this.track;
+    const gy = tr.height(this.s, this.u);
+    const shadow = {
+      p: tr.toWorld(this.s, this.u, gy, _sp),
+      n: this.state === 'ground' ? this.normal : tr.normal(this.s, this.u, _sn),
+      h: this.state === 'grind' ? this.y - gy : this.y - gy,
+      yaw: Math.atan2(-this.forward.x, -this.forward.z),
+    };
+    ch.update(dt, { fast, shadow, wind: wind.clone(), vibration: this.state === 'grind' ? 1 : this.state === 'ground' ? clamp(sp / 30, 0, 1) * 0.4 : 0 });
   }
 }
