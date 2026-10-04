@@ -50,15 +50,17 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 .btn:hover, .btn.focus { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.5); }
 .btn.primary { background: linear-gradient(100deg, #ff3d7f, #ff8a3a); border: none; box-shadow: 0 10px 30px rgba(255, 61, 127, 0.35); }
 .btn.primary:hover { filter: brightness(1.12); }
+.btn.focus { outline: 2px solid #fff; outline-offset: 3px; }
 .btn.pulse { animation: pulse 2.2s ease-in-out infinite; }
 
 /* ---------- select ---------- */
-#select.show { display: flex; flex-direction: column; pointer-events: auto; background: linear-gradient(90deg, rgba(5, 6, 14, 0.15) 0%, rgba(5, 6, 14, 0.0) 35%, rgba(5, 6, 14, 0.82) 62%); padding: 30px 40px; animation: fadeIn 0.4s ease; }
-.sel-head { text-align: right; }
+#select.show { display: flex; flex-direction: column; pointer-events: auto; background: linear-gradient(90deg, rgba(5, 6, 14, 0.7) 0%, rgba(5, 6, 14, 0.0) 32%, rgba(5, 6, 14, 0.0) 62%, rgba(5, 6, 14, 0.75) 100%); padding: 28px 36px; animation: fadeIn 0.4s ease; }
+.sel-head { text-align: center; }
 .sel-title { font-family: var(--num); font-size: 48px; letter-spacing: 0.1em; font-style: italic; line-height: 1; }
 .sel-title b { color: var(--accent); }
 .sel-sub { font-size: 12px; letter-spacing: 0.15em; opacity: 0.6; margin-top: 6px; }
-.sel-body { flex: 1; display: grid; grid-template-columns: 1fr minmax(360px, 520px); gap: 30px; margin-top: 20px; min-height: 0; }
+.sel-body { flex: 1; display: grid; grid-template-columns: minmax(280px, 400px) 1fr minmax(320px, 440px); gap: 24px; margin-top: 16px; min-height: 0; }
+.sel-spacer { pointer-events: none; }
 .sel-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .sel-col.riders { justify-content: flex-end; }
 .sel-label { font-family: var(--num); font-size: 22px; letter-spacing: 0.4em; opacity: 0.6; transition: all 0.2s; }
@@ -68,8 +70,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 .card:hover { border-color: rgba(255, 255, 255, 0.4); }
 .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 10px 30px rgba(255, 61, 127, 0.25); background: rgba(40, 14, 34, 0.6); }
 .card .swatch { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; }
-.rider-card { width: 140px; }
-.rider-card .nm { font-family: var(--num); font-size: 38px; line-height: 0.9; font-style: italic; }
+.rider-card { flex: 1; min-width: 0; padding: 10px 12px; }
+.rider-card .nm { font-family: var(--num); font-size: 34px; line-height: 0.9; font-style: italic; }
 .rider-card .jp { font-size: 11px; opacity: 0.7; letter-spacing: 0.2em; }
 .rider-card .tg { font-size: 11px; color: var(--gold); margin-top: 4px; font-weight: 800; }
 .info-panel { background: var(--glass); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; max-width: 452px; backdrop-filter: blur(8px); }
@@ -79,9 +81,9 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 .stat .bar i { flex: 1; height: 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); transform: skewX(-20deg); }
 .stat .bar i.on { background: linear-gradient(90deg, var(--accent), var(--gold)); }
 .stage-list { flex-direction: column; overflow-y: auto; }
-.stage-card { padding: 14px 18px 14px 22px; }
+.stage-card { padding: 10px 16px 10px 20px; flex-shrink: 0; }
 .stage-card .row { display: flex; justify-content: space-between; align-items: baseline; }
-.stage-card .nm { font-family: var(--num); font-size: 34px; font-style: italic; line-height: 0.9; letter-spacing: 0.04em; }
+.stage-card .nm { font-family: var(--num); font-size: 30px; white-space: nowrap; font-style: italic; line-height: 0.9; letter-spacing: 0.04em; }
 .stage-card .time { font-family: var(--num); font-size: 18px; letter-spacing: 0.25em; color: var(--accent2); }
 .stage-card .jp { font-weight: 900; font-size: 14px; margin: 2px 0 6px; }
 .stage-card .ds { font-size: 12px; line-height: 1.6; opacity: 0.75; }
@@ -162,6 +164,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 @media (max-width: 900px) {
   #select.show { padding: 16px; background: linear-gradient(180deg, rgba(5, 6, 14, 0.1) 0%, rgba(5, 6, 14, 0.85) 45%); }
   .sel-body { grid-template-columns: 1fr; overflow-y: auto; }
+  .sel-spacer { display: none; }
   .sel-col.riders { justify-content: flex-start; }
   .rider-card { width: auto; flex: 1; }
   .sel-title { font-size: 32px; }

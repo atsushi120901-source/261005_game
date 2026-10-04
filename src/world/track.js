@@ -389,7 +389,8 @@ export class Track {
       const ry = this.railY(r, s);
       const tolU = r.type === 'ledge' ? 1.15 : 1.0;
       if (Math.abs(u - r.u) > tolU) continue;
-      if (y < ry - 0.55 || y > ry + 0.9) continue;
+      const slope = Math.abs((r.y1 - r.y0) / (r.s1 - r.s0));
+      if (y < ry - 0.55 || y > ry + 0.9 + slope * 1.5) continue;
       if (vy > 3) continue;
       return r;
     }

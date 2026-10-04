@@ -345,7 +345,7 @@ class Game {
   showResults() {
     this.state = 'results';
     this.audio.silenceLoops();
-    const par = this.track.length / 21;
+    const par = this.track.length / 17;
     const bonus = Math.max(0, Math.round((par - this.runTime) * 120 / 10) * 10);
     const total = this.score + bonus;
     const perKm = total / (this.track.length / 1000);
@@ -385,6 +385,27 @@ class Game {
     const dt = Math.min((now - this.lastNow) / 1000, 1 / 20);
     this.lastNow = now;
     this.tick(dt, true);
+    this.adaptResolution(dt);
+  }
+
+  // Dynamic resolution: trade pixels for frame rate when the GPU struggles.
+  adaptResolution(dt) {
+    if (this.state !== 'play') return;
+    const a = (this._perf ||= { t: 0, frames: 0, scale: 1 });
+    a.t += dt;
+    a.frames++;
+    if (a.t < 2) return;
+    const fps = a.frames / a.t;
+    a.t = 0;
+    a.frames = 0;
+    let next = a.scale;
+    if (fps < 45) next = Math.max(0.6, a.scale - 0.12);
+    else if (fps > 58 && a.scale < 1) next = Math.min(1, a.scale + 0.06);
+    if (next !== a.scale) {
+      a.scale = next;
+      this.renderer.setPixelRatio(this.quality.pixelRatio * next);
+      this.resize();
+    }
   }
 
   // Advance the simulation without waiting for frames (used by tests / debugging).

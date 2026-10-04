@@ -70,9 +70,8 @@ export class CameraRig {
       this.orbitAngle += dt * 0.18;
       const p = rider.position;
       const r = 4.2;
-      this.camera.position.set(p.x + Math.cos(this.orbitAngle) * r, p.y + 1.4 + Math.sin(this.t * 0.3) * 0.2, p.z + Math.sin(this.orbitAngle) * r);
-      this.look.set(p.x, p.y + 0.95, p.z);
-      this.camera.lookAt(this.look);
+      this.camera.position.set(p.x + Math.cos(this.orbitAngle) * r, p.y + 1.3 + Math.sin(this.t * 0.3) * 0.2, p.z + Math.sin(this.orbitAngle) * r);
+      this._frame(p, 0.9, this.offsetX ?? -1.2);
       this.fov = 42;
     } else if (this.mode === 'inspect') {
       const p = rider.position;
@@ -91,9 +90,8 @@ export class CameraRig {
       // rider faces +X of the board -> right of forward vector
       const rx = -fwd.z, rz = fwd.x;
       const dx = rx * cx + fwd.x * sx, dz = rz * cx + fwd.z * sx;
-      this.camera.position.set(p.x + dx * 3.1, p.y + 1.25, p.z + dz * 3.1);
-      this.look.set(p.x, p.y + 0.9, p.z);
-      this.camera.lookAt(this.look);
+      this.camera.position.set(p.x + dx * 3.6, p.y + 1.15, p.z + dz * 3.6);
+      this._frame(p, 0.85, this.offsetX ?? 0.0);
       this.fov = 38;
     }
     // shake
@@ -110,6 +108,14 @@ export class CameraRig {
     }
   }
 
+  // Look at the rider but shift the framing sideways so UI panels don't cover them.
+  _frame(p, h, side) {
+    _d.set(p.x - this.camera.position.x, 0, p.z - this.camera.position.z).normalize();
+    // camera right vector = dir x up
+    this.look.set(p.x - _d.z * side, p.y + h, p.z + _d.x * side);
+    this.camera.lookAt(this.look);
+  }
+
   _apply(tr) {
     tr.toWorld(this.cs, this.cu, this.cy, this.camera.position);
     this.camera.lookAt(this.look);
@@ -117,3 +123,4 @@ export class CameraRig {
 }
 
 const _v = new THREE.Vector3();
+const _d = new THREE.Vector3();

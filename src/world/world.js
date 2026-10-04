@@ -30,6 +30,15 @@ export class World {
     this.disposables = [];
 
     this.mats = this._materials();
+    this.sunDir = new THREE.Vector3(...stage.sky.sunDir).normalize();
+    if (stage.sky.sunAlongTrack) {
+      // "Manhattanhenge": the sun sets at the far end of the street
+      const n = track.n - 1;
+      const dx = track.px[n] - track.px[0], dz = track.pz[n] - track.pz[0];
+      const l = Math.hypot(dx, dz);
+      const off = stage.sky.sunAlongTrack;
+      this.sunDir.set(dx / l - (dz / l) * off, stage.sky.sunDir[1], dz / l + (dx / l) * off).normalize();
+    }
     this._buildSky();
     this._buildLights();
     this._buildTrack();
@@ -82,7 +91,7 @@ export class World {
   // ------------------------------------------------------------------ sky & light
   _buildSky() {
     const geo = new THREE.SphereGeometry(1800, 48, 24);
-    this.skyMat = createSkyMaterial(this.stage);
+    this.skyMat = createSkyMaterial(this.stage, this.sunDir);
     this.sky = new THREE.Mesh(geo, this.skyMat);
     this.sky.frustumCulled = false;
     this.sky.renderOrder = -10;
@@ -97,10 +106,9 @@ export class World {
     this.hemi = new THREE.HemisphereLight(L.hemiSky, L.hemiGround, L.hemi);
     this.group.add(this.hemi);
     this.sun = new THREE.DirectionalLight(L.sun, L.sunIntensity);
-    this.sunDir = new THREE.Vector3(...this.stage.sky.sunDir).normalize();
     // keep the light from grazing too low for usable shadows
     const sd = this.sunDir.clone();
-    sd.y = Math.max(sd.y, 0.32);
+    sd.y = Math.max(sd.y, L.shadowElev ?? 0.32);
     this.shadowDir = sd.normalize();
     const q = this.quality;
     if (q.shadows) {
@@ -928,8 +936,9 @@ export class World {
     const tipGeo = new THREE.SphereGeometry(0.09, 8, 6).translate(0, 2.05, 0);
     this._instanced(tipGeo, poleMat, flagList);
 
-    // Rails and ledges
+    // Rails and ledges (with an LED under-glow so they read at speed)
     const supports = [];
+    const railGlow = this.emissive(accent, 2.2);
     for (const r of tr.rails) {
       const pts = [];
       for (let s = r.s0; s <= r.s1 + 0.01; s += 1) pts.push(tr.toWorld(s, r.u, tr.railY(r, s) - 0.05));
@@ -937,6 +946,8 @@ export class World {
         this._ledge(r);
       } else {
         this._pathTube(pts, 0.045, this.mats.metal, 8, { cast: this.quality.shadows });
+        const under = pts.map((p) => p.clone().add(new THREE.Vector3(0, -0.07, 0)));
+        this._pathTube(under, 0.014, railGlow, 4);
         for (let s = r.s0 + 0.5; s < r.s1; s += 3.5) {
           const top = tr.railY(r, s) - 0.05;
           const gy = tr.height(s, r.u, false) - 0.3;

@@ -237,9 +237,9 @@ export function createScreenMaterial(seed) {
 }
 
 // ------------------------------------------------------------------ sky
-export function createSkyMaterial(stage) {
+export function createSkyMaterial(stage, sunOverride = null) {
   const s = stage.sky;
-  const sunDir = new THREE.Vector3(...s.sunDir).normalize();
+  const sunDir = sunOverride ? sunOverride.clone() : new THREE.Vector3(...s.sunDir).normalize();
   return new THREE.ShaderMaterial({
     defines: s.aurora > 0 ? { AURORA: 1 } : {},
     side: THREE.BackSide,
@@ -316,7 +316,7 @@ export function createSkyMaterial(stage) {
           col = mix(col, uSunColor * 2.2 * crater, disk);
           col += uSunColor * 0.25 * pow(max(sd, 0.0), 300.0);
         } else {
-          col += uSunColor * disk * 18.0;
+          col += uSunColor * disk * 6.0;
         }
         // stars
         if (uStars > 0.0) {

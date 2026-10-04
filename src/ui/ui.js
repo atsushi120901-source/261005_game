@@ -174,14 +174,36 @@ export class UI {
         if (any('Escape', 'KeyP', 'PadStart')) g.pause();
         break;
       case 'paused':
-        if (any('Escape', 'KeyP', 'PadStart', 'PadB')) g.resume();
+        if (any('Escape', 'KeyP', 'PadStart', 'PadB')) { g.resume(); break; }
+        this._modalNav('pause', inp, ok);
         break;
       case 'results':
-        if (ok) { this.hide('results'); g.startRun(); }
-        if (back) { this.hide('results'); g.toSelect(); }
+        if (back) { this.hide('results'); g.toSelect(); break; }
+        this._modalNav('results', inp, ok);
         break;
       default:
         break;
+    }
+  }
+
+  // Up/down (or left/right) moves focus between a modal's buttons, confirm clicks.
+  _modalNav(id, inp, ok) {
+    const btns = [...document.querySelectorAll(`#${id} [data-act]`)];
+    if (!btns.length) return;
+    if (this.modalId !== id) {
+      this.modalId = id;
+      this.focus = 0;
+    }
+    const dir = inp.was('ArrowDown', 'KeyS', 'PadDown', 'ArrowRight', 'KeyD', 'PadRight') ? 1
+      : inp.was('ArrowUp', 'KeyW', 'PadUp', 'ArrowLeft', 'KeyA', 'PadLeft') ? -1 : 0;
+    if (dir) {
+      this.focus = (this.focus + dir + btns.length) % btns.length;
+      this.game.audio.play('ui');
+    }
+    btns.forEach((b, i) => b.classList.toggle('focus', i === this.focus));
+    if (ok) {
+      this.modalId = null;
+      btns[this.focus].click();
     }
   }
 
