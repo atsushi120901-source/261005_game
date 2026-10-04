@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <title>CITY POWDER — Urban Snowboard</title>
+    <meta name="description" content="雪に覆われた街を駆け抜ける3Dスノーボードアクション" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=M+PLUS+1p:wght@500;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+
+      <!-- loading -->
+      <div id="loading" class="screen show">
+        <div class="logo small"><span>CITY</span><span class="b">POWDER</span></div>
+        <div class="load-bar"><div id="load-fill"></div></div>
+        <div id="load-text">街を生成中...</div>
+      </div>
+
+      <!-- title -->
+      <div id="title" class="screen">
+        <div class="title-wrap">
+          <div class="kicker-line">URBAN SNOWBOARD ODYSSEY</div>
+          <div class="logo"><span>CITY</span><span class="b">POWDER</span></div>
+          <div class="sub">雪に眠る街を、滑り抜けろ。</div>
+          <button class="btn primary pulse" id="btn-start">PRESS START</button>
+          <div class="hint">ENTER / クリック / Aボタン</div>
+        </div>
+        <div class="title-foot">
+          <span>← → 滑走 / カービング</span><span>SPACE 長押しでため → 離してジャンプ</span><span>空中: ← → スピン / ↑ ↓ フリップ</span><span>J K L I グラブ</span>
+        </div>
+      </div>
+
+      <!-- select -->
+      <div id="select" class="screen">
+        <div class="sel-head">
+          <div class="sel-title">SELECT <b>RIDER</b> &amp; <b>DISTRICT</b></div>
+          <div class="sel-sub">↑↓ で項目切替 ・ ←→ で選択 ・ ENTER でドロップイン</div>
+        </div>
+        <div class="sel-body">
+          <div class="sel-col riders">
+            <div class="sel-label" data-row="0">RIDER</div>
+            <div id="rider-cards" class="cards"></div>
+            <div id="rider-info" class="info-panel"></div>
+          </div>
+          <div class="sel-col stages">
+            <div class="sel-label" data-row="1">DISTRICT</div>
+            <div id="stage-cards" class="cards stage-list"></div>
+          </div>
+        </div>
+        <div class="sel-foot">
+          <button class="btn" id="btn-back">BACK</button>
+          <button class="btn primary" id="btn-go">DROP IN ▶</button>
+        </div>
+      </div>
+
+      <!-- hud -->
+      <div id="hud" class="screen">
+        <div class="hud-tl">
+          <div class="score-label">SCORE</div>
+          <div id="score" class="score">0</div>
+          <div id="combo" class="combo"><span id="combo-mult">x2</span> <span id="combo-pts">0</span></div>
+          <div id="combo-bar" class="combo-bar"><div></div></div>
+        </div>
+        <div class="hud-tr">
+          <div class="time-row"><span class="lbl">TIME</span><span id="time">0:00.00</span></div>
+          <div class="speed-row"><span id="speed">0</span><span class="unit">km/h</span></div>
+          <div class="token-row"><span class="flake">❄</span><span id="tokens">0</span></div>
+        </div>
+        <div id="trick-feed" class="trick-feed"></div>
+        <div id="center-msg" class="center-msg"></div>
+        <div class="hud-bottom">
+          <div class="progress"><div id="prog-fill"></div><div id="prog-dot"></div></div>
+          <div id="district-name" class="district"></div>
+        </div>
+        <div id="controls-hint" class="controls-hint">
+          <div><b>← →</b> カーブ</div>
+          <div><b>↑</b> クラウチ加速 <b>↓</b> ブレーキ</div>
+          <div><b>SPACE</b> 長押し→離してオーリー</div>
+          <div><b>空中 ← →</b> スピン <b>↑ ↓</b> フリップ</div>
+          <div><b>J K L I</b> グラブ</div>
+          <div><b>ESC</b> ポーズ</div>
+        </div>
+      </div>
+
+      <!-- touch controls -->
+      <div id="touch" class="touch">
+        <div id="stick" class="stick"><div id="stick-knob"></div></div>
+        <div class="tbtns">
+          <button id="t-grab2" class="tbtn small">TWEAK</button>
+          <button id="t-grab" class="tbtn">GRAB</button>
+          <button id="t-jump" class="tbtn big">JUMP</button>
+        </div>
+        <button id="t-pause" class="tpause">II</button>
+      </div>
+
+      <!-- pause -->
+      <div id="pause" class="screen modal">
+        <div class="panel">
+          <div class="panel-title">PAUSED</div>
+          <button class="btn primary" data-act="resume">RESUME</button>
+          <button class="btn" data-act="restart">RESTART</button>
+          <button class="btn" data-act="select">RIDER / DISTRICT</button>
+          <button class="btn" data-act="quality">GRAPHICS: <span id="q-label">HIGH</span></button>
+          <button class="btn" data-act="sound">SOUND: <span id="s-label">ON</span></button>
+        </div>
+      </div>
+
+      <!-- results -->
+      <div id="results" class="screen modal">
+        <div class="panel wide">
+          <div class="res-head">
+            <div>
+              <div class="panel-title" id="res-stage">RUN COMPLETE</div>
+              <div class="res-rider" id="res-rider"></div>
+            </div>
+            <div class="rank" id="res-rank">S</div>
+          </div>
+          <div class="res-grid">
+            <div><span>TRICK SCORE</span><b id="res-trick">0</b></div>
+            <div><span>SNOWFLAKES</span><b id="res-tokens">0</b></div>
+            <div><span>TIME</span><b id="res-time">0:00</b></div>
+            <div><span>TIME BONUS</span><b id="res-bonus">0</b></div>
+            <div><span>BEST TRICK</span><b id="res-best">-</b></div>
+            <div><span>MAX COMBO</span><b id="res-combo">x1</b></div>
+          </div>
+          <div class="res-total"><span>TOTAL</span><b id="res-total">0</b><em id="res-record"></em></div>
+          <div class="res-btns">
+            <button class="btn primary" data-act="retry">RETRY</button>
+            <button class="btn" data-act="next">NEXT DISTRICT ▶</button>
+            <button class="btn" data-act="select">SELECT</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="fade" class="fade"></div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
