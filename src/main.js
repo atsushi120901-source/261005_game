@@ -279,7 +279,8 @@ class Game {
             let pts = trickPoints(t);
             if (name && pts >= 100) {
               if (e.perfect) pts = Math.round(pts * 1.25 / 10) * 10;
-              this.addCombo(name + (e.perfect ? ' ★' : ''), pts, e.perfect ? 'perfect' : '');
+              if (e.sketchy) pts = Math.round(pts * 0.5 / 10) * 10;
+              this.addCombo(name + (e.perfect ? ' ★' : e.sketchy ? ' (SKETCHY)' : ''), pts, e.perfect ? 'perfect' : '');
               this.audio.play(e.perfect ? 'perfect' : 'trick', Math.min(1, pts / 2000 + 0.4));
               if (pts > 1500) this.post.flash(0xffffff, 0.12);
             }

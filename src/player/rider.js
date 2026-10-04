@@ -289,6 +289,10 @@ export class Rider {
     this.charge = 0;
     this.takeoffPhi = this.phi;
     this.contact = false;
+    // keys already held when leaving the ground (carving / speed tuck) must be
+    // released and pressed again before they rotate the rider
+    this.spinLock = true;
+    this.flipLock = true;
     this.trick = { spin: 0, flip: 0, grabs: {}, air: 0, switch: this.switch, quarter };
     this.emit('takeoff', { quarter, ollie });
     if (!ollie) this.audio?.play('whoosh');
@@ -309,22 +313,30 @@ export class Rider {
     // rotation control
     const maxSpin = 2 * Math.PI * 1.05 * this.h.spin;
     const maxFlip = 2 * Math.PI * 0.9 * this.h.spin;
-    const spinIn = input.steer;
-    const flipIn = input.down ? 1 : input.up ? -1 : 0;
+    const rawSteer = input.rawSteer ?? input.steer;
+    const flipRaw = input.down ? 1 : input.up ? -1 : 0;
+    if (this.spinLock && Math.abs(rawSteer) < 0.1) this.spinLock = false;
+    if (this.flipLock && !flipRaw) this.flipLock = false;
+    const spinIn = this.spinLock ? 0 : rawSteer;
+    const flipIn = this.flipLock ? 0 : flipRaw;
+    // landing assist: when touchdown is close, line the board up hard
+    const hAbove = Math.max(0, this.y - tr.height(this.s, this.u));
+    const tImpact = (this.vy + Math.sqrt(Math.max(0, this.vy * this.vy + 2 * G * hAbove))) / G;
+    const assist = tImpact < 0.45 ? 2.6 : 1;
+    this.landAssist = assist > 1;
     if (Math.abs(spinIn) > 0.1) {
-      this.spinVel = damp(this.spinVel, spinIn * maxSpin, 7, dt);
+      this.spinVel = damp(this.spinVel, spinIn * maxSpin, 9, dt);
     } else {
       // settle so the board lines up with the travel direction (regular or switch)
       let off = wrapAngle(Math.atan2(this.vu, this.vs) - this.phi);
       if (Math.abs(off) > Math.PI / 2) off -= Math.sign(off) * Math.PI;
-      const target = this.spin + off;
-      this.spinVel = damp(this.spinVel, clamp((target - this.spin) * 5, -maxSpin, maxSpin), 9, dt);
+      this.spinVel = damp(this.spinVel, clamp(off * 6 * assist, -maxSpin * 1.5, maxSpin * 1.5), 14, dt);
     }
     if (flipIn) {
-      this.flipVel = damp(this.flipVel, flipIn * maxFlip, 6, dt);
+      this.flipVel = damp(this.flipVel, flipIn * maxFlip, 7, dt);
     } else {
       const target = Math.round(this.flip / TAU) * TAU;
-      this.flipVel = damp(this.flipVel, clamp((target - this.flip) * 4.5, -maxFlip, maxFlip), 8, dt);
+      this.flipVel = damp(this.flipVel, clamp((target - this.flip) * 5.5 * assist, -maxFlip * 1.5, maxFlip * 1.5), 12, dt);
     }
     this.spin += this.spinVel * dt;
     this.flip += this.flipVel * dt;
@@ -376,7 +388,8 @@ export class Rider {
     const alignErr = Math.min(Math.abs(dYaw), Math.PI - Math.abs(dYaw));
     const flipErr = Math.abs(wrapAngle(this.flip));
     const sp = Math.hypot(this.vs, this.vu);
-    const ok = (alignErr < 0.8 || sp < 3) && flipErr < 0.95;
+    const ok = (alignErr < 1.15 || sp < 3) && flipErr < 1.25;
+    const sketchy = alignErr > 0.6 || flipErr > 0.7;
     this.y = ground;
     if (!ok && this.invuln <= 0) {
       this._startCrash('landing');
@@ -391,7 +404,7 @@ export class Rider {
     this.vs -= (vn / nl) * nx;
     this.vu -= (vn / nl) * ny;
     // landing on a downslope converts some of the drop into speed
-    const keep = impact > 16 ? 0.85 : 0.97;
+    const keep = (impact > 16 ? 0.85 : 0.97) * (sketchy ? 0.75 : 1);
     this.vs *= keep;
     this.vu *= keep;
     this.vy = 0;
@@ -408,7 +421,7 @@ export class Rider {
     this.grab = null;
     const t = this.trick;
     const perfect = alignErr < 0.18 && flipErr < 0.25;
-    this.emit('land', { impact, perfect, trick: t, alignErr });
+    this.emit('land', { impact, perfect, sketchy, trick: t, alignErr });
     this.fx?.burst(this.position, Math.min(1.5, impact / 10 + 0.3));
     this.audio?.play('land', Math.min(1, impact / 14 + 0.25));
     this.trick = null;

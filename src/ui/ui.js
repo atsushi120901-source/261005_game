@@ -249,15 +249,22 @@ export class UI {
     }
     // live readout of the trick being performed in the air
     let live = '';
+    let bad = false;
     if (r.state === 'air' && r.trick && r.airTime > 0.25) {
       const t = r.trick;
       if (Math.abs(t.spin) > 2.4 || Math.abs(t.flip) > 2.4 || Object.keys(t.grabs).length) live = trickName(t);
+      // warn when touching down now would be a bail
+      const d = Math.abs(((r.phi - Math.atan2(r.vu, r.vs)) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2);
+      const f = Math.abs(((r.flip % 6.2832) + 6.2832 * 1.5) % 6.2832 - 3.1416);
+      bad = r.landAssist && (d > 1.0 || f > 1.1);
+      if (bad) live = 'キーを離して着地！';
     }
     if (live !== this.cache.live) {
       this.cache.live = live;
       const el = $('live-trick');
       if (live) el.textContent = live;
       el.classList.toggle('on', !!live);
+      el.classList.toggle('bad', bad);
     }
     if (this.grindEl && r.state === 'grind') {
       this.grindEl.querySelector('.tp').textContent = `+${fmt(r.grindTime * 520 * r.h.grind + 120)}`;

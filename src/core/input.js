@@ -79,6 +79,7 @@ export class Input {
     const s = this.state;
     // keyboard steering eases in for smooth carves; analog passes straight through
     s.steer = Math.abs(steer) < 1 && steer !== 0 ? steer : damp(s.steer, steer, 9, dt);
+    s.rawSteer = steer; // undamped, used for air rotation so releasing a key stops at once
     s.up = up;
     s.down = down;
     s.jump = jump;

@@ -118,6 +118,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 @keyframes trickIn { 0% { opacity: 0; transform: scale(1.6) skewX(-8deg); filter: blur(6px); } 10% { opacity: 1; transform: scale(1) skewX(-8deg); filter: blur(0); } 75% { opacity: 1; transform: translateY(0) skewX(-8deg); } 100% { opacity: 0; transform: translateY(-30px) skewX(-8deg); } }
 .live-trick { position: absolute; top: 34%; left: 0; right: 0; text-align: center; font-family: var(--num); font-size: 30px; font-style: italic; letter-spacing: 0.08em; color: #bfe8ff; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 0.15s; }
 .live-trick.on { opacity: 0.9; }
+.live-trick.bad { color: #ff6b6b; }
 .center-msg { position: absolute; top: 42%; left: 0; right: 0; text-align: center; font-family: var(--num); font-size: clamp(80px, 14vw, 180px); font-style: italic; line-height: 1; text-shadow: 0 6px 40px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .center-msg.pop { animation: countPop 0.9s ease forwards; }
 @keyframes countPop { 0% { opacity: 0; transform: scale(2.2); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: scale(0.9); } }
