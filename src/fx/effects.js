@@ -110,7 +110,7 @@ class ParticlePool {
           gl_PointSize = size * uScale / max(0.1, -mv.z); }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D uMap; uniform vec3 uColor; varying float vA;
-        void main(){ float a = texture2D(uMap, gl_PointCoord).a * vA * 0.75; if (a < 0.003) discard; gl_FragColor = vec4(uColor, a); }`,
+        void main(){ float a = texture2D(uMap, gl_PointCoord).a * vA * 0.6; if (a < 0.003) discard; gl_FragColor = vec4(uColor, a); }`,
     });
     this.points = new THREE.Points(g, this.mat);
     this.points.frustumCulled = false;
@@ -248,7 +248,7 @@ export class Effects {
         vel.x * 0.35 + (Math.random() - 0.5) * spread + (n ? n.x * 2 : 0),
         1.2 + Math.random() * 2.4 * amount,
         vel.z * 0.35 + (Math.random() - 0.5) * spread + (n ? n.z * 2 : 0),
-        0.5 + Math.random() * 0.6, 0.1 + Math.random() * 0.18
+        0.45 + Math.random() * 0.55, 0.07 + Math.random() * 0.13
       );
     }
   }

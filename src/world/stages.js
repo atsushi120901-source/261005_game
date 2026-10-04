@@ -29,7 +29,7 @@ export const STAGES = [
     light: {
       hemiSky: 0x7584d0,
       hemiGround: 0x2a1832,
-      hemi: 0.5,
+      hemi: 0.6,
       sun: 0x9fb4ff,
       sunIntensity: 0.55,
     },

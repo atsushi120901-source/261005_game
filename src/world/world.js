@@ -685,6 +685,7 @@ export class World {
     this._instanced(armGeo, this.mats.darkMetal, arms);
     this._instanced(headGeo, this.mats.darkMetal, heads);
     this._instanced(bulbGeo, this.emissive(st.city.lamp, 6), bulbs);
+    if (st.id !== 'golden') this._lightCones(bulbs, lampColor);
 
     // --- vending machines
     if (P.vending > 0) {
@@ -799,6 +800,50 @@ export class World {
       this._instanced(new THREE.CylinderGeometry(0.28, 0.28, 0.8, 10), this.mats.darkMetal, boxList);
     }
     this._buildWires();
+  }
+
+  // Soft additive light cones under lamps (lit falling snow / haze).
+  _lightCones(mats, color) {
+    if (!mats.length) return;
+    const h = 6.0;
+    const cone = new THREE.ConeGeometry(2.4, h, 20, 1, true);
+    cone.translate(0, -h / 2, 0);
+    const pos = cone.attributes.position;
+    const col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const t = 1 + pos.getY(i) / h; // 1 at apex, 0 at the ground
+      const k = Math.pow(t, 1.6) * 0.3;
+      col.set([color.r * k, color.g * k, color.b * k], i * 3);
+    }
+    cone.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const geos = mats.map((m) => {
+      const g = cone.clone();
+      const p = new THREE.Vector3().setFromMatrixPosition(m);
+      g.translate(p.x, p.y, p.z);
+      return g;
+    });
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      vertexShader: /* glsl */ `
+        attribute vec3 color; varying vec3 vC; varying vec3 vN; varying vec3 vV; varying float vD;
+        void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vD = -mv.z;
+          gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: /* glsl */ `
+        varying vec3 vC; varying vec3 vN; varying vec3 vV; varying float vD;
+        void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), 2.0);
+          float fade = exp(-vD * 0.012) * smoothstep(1.0, 6.0, vD);
+          gl_FragColor = vec4(vC * f * fade, 1.0); }`,
+    });
+    this.disposables.push(mat);
+    const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+    geos.forEach((g) => g.dispose());
+    cone.dispose();
+    mesh.renderOrder = 3;
+    this.add(mesh);
   }
 
   _wire(a, b, sag) {

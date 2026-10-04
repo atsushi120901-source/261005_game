@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, damp, wrapAngle, TAU, lerp } from '../core/utils.js';
+import { clamp, damp, dampAngle, wrapAngle, TAU, lerp } from '../core/utils.js';
 import { EDGE_U, BUILD_U, BANK_TOP } from '../world/track.js';
 
 const G = 13.5;
@@ -453,7 +453,7 @@ export class Rider {
     this.s += this.vs * dt;
     this.y = tr.railY(r, this.s);
     this.vy = slope * this.vs;
-    this.phi = damp(this.phi, this.grindPhi, 12, dt);
+    this.phi = dampAngle(this.phi, this.grindPhi, 12, dt);
     this.edge = Math.sin(this.time = (this.time || 0) + dt * 9) * 0.04;
     this.fx?.sparks(this.position, this.velocity);
     this.fx?.trail(this.position, this.forward, this.normal, false);
