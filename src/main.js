@@ -7,6 +7,7 @@ import { Track } from './world/track.js';
 import { World } from './world/world.js';
 import { RIDERS, getRider } from './player/characters.js';
 import { Character } from './player/character.js';
+import { bakeRider } from './player/riderBake.js';
 import { Rider, trickName, trickPoints } from './player/rider.js';
 import { NpcRider } from './player/npc.js';
 import { Effects } from './fx/effects.js';
@@ -84,6 +85,10 @@ class Game {
   async boot(params) {
     await this.loadStage(this.stageId);
     this.setRider(this.riderId);
+    await this.ui.progress(0.95, 'ライダーを準備中...');
+    // sculpt every rider in the background so switching is instant later
+    for (const r of RIDERS) bakeRider(r, Character.bind, r.cell);
+    await this.character.ready;
     if (params.has('inspect')) {
       this.state = 'inspect';
       this.placeShowcase();
