@@ -210,7 +210,7 @@ function bodyMaterial(grime) {
 }
 
 export class Character {
-  constructor(def) {
+  constructor(def, opts = {}) {
     this.def = def;
     const L = def.look;
     this.root = new THREE.Group();
@@ -286,7 +286,7 @@ export class Character {
     this.root.add(this.body);
     this.body.bind(new THREE.Skeleton(this.bones, bind.map((m) => m.clone().invert())), new THREE.Matrix4());
     this._applyBones();
-    this.ready = bakeRider(def, bind, def.cell).then((geo) => {
+    this.ready = bakeRider(def, bind, opts.cell ?? def.cell).then((geo) => {
       if (this.disposed) return;
       this.body.geometry.dispose();
       this.body.geometry = geo;

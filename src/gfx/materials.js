@@ -19,7 +19,7 @@ export function createSnowMaterial(stage) {
     roughness: 0.78,
     metalness: 0.0,
     normalMap: nm,
-    normalScale: stage.terrain === 'mountain' ? new THREE.Vector2(0.16, 0.16) : new THREE.Vector2(0.55, 0.55),
+    normalScale: stage.terrain === 'mountain' || stage.terrain === 'open' ? new THREE.Vector2(0.16, 0.16) : new THREE.Vector2(0.55, 0.55),
     vertexColors: true,
   });
   mat.userData.glint = stage.id === 'golden' ? 3.0 : 2.2;

@@ -100,7 +100,7 @@ export class Rider {
     this.crashT = 0;
     this.invuln = 1.0;
     this.groundTimer = 0;
-    this.lastSafe = { s, u: 0 };
+    this.lastSafe = { s, u };
     this.finished = false;
     this.surfaceVy = 0;
     this.tumble = new THREE.Quaternion();
@@ -134,10 +134,15 @@ export class Rider {
       default: break;
     }
     // course limits
-    const umax = BUILD_U - 0.7;
+    const tr = this.track;
+    const umax = tr.uMax ?? BUILD_U - 0.7;
     if (Math.abs(this.u) > umax) {
       this.u = Math.sign(this.u) * umax;
       if (this.vu * this.u > 0) this.vu = -this.vu * 0.3;
+    }
+    if (tr.sMin !== undefined && this.s < tr.sMin) {
+      this.s = tr.sMin;
+      if (this.vs < 0) this.vs = -this.vs * 0.3;
     }
     if (this.s >= this.track.finishS && !this.finished) {
       this.finished = true;
@@ -164,7 +169,9 @@ export class Rider {
     const brake = input.down ? 1 : 0;
     const k = (tuck ? 0.0012 : 0.0021) / h.speed;
     let dec = k * sp * sp + 0.28 + brake * 9.5;
-    if (Math.abs(this.u) > EDGE_U + 0.05) dec += 1.2; // sidewalk is slower
+    if (sp > 30) dec += (sp - 30) * 1.5; // terminal speed
+    const banks = tr.banks !== false;
+    if (banks && Math.abs(this.u) > EDGE_U + 0.05) dec += 1.2; // sidewalk is slower
     const nsp = Math.max(0, sp - dec * dt);
     if (sp > 1e-4) { vs *= nsp / sp; vu *= nsp / sp; }
     sp = nsp;
@@ -182,7 +189,15 @@ export class Rider {
     } else {
       this.phi += steer * 1.5 * dt;
       // push off when nearly stopped on flat ground
-      if (Math.abs(g.gs) < 0.03) vs += 2.5 * dt;
+      if (Math.abs(g.gs) < 0.03 && banks) vs += 2.5 * dt;
+    }
+    // skating: at low speed, push along the board (lets you cross flats and climb out of dips)
+    if (!banks && sp < 5 && (input.up || (sp < 0.6 && Math.abs(g.gs) + Math.abs(g.gu) < 0.04))) {
+      if (sp < 1.2 && Math.abs(steer) > 0.2) this.phi += steer * 1.2 * dt;
+      const dir = this.switch ? this.phi + Math.PI : this.phi;
+      const push = (input.up ? 4.2 : 2.2) * (1 - sp / 5);
+      vs += Math.cos(dir) * push * dt;
+      vu += Math.sin(dir) * push * dt;
     }
     // edge grip: kill sideways motion relative to the board axis
     const bx = Math.cos(this.phi), by = Math.sin(this.phi);
@@ -215,16 +230,29 @@ export class Rider {
     this.u += vu * dt;
     const ng = tr.height(this.s, this.u);
 
-    // obstacles (car sides) -> crash; ordinary steep snow never trips you
+    // obstacles (car sides, walls) -> crash; ordinary steep snow never trips you
     if (ng - prevY > 0.5 && this.invuln <= 0 && ng - tr.height(this.s, this.u, false) > 0.3) {
       this.y = prevY;
       this._startCrash('obstacle');
       return;
     }
+    // running into a near-vertical snow face (landing knuckle, rock band) is a crash too
+    const rise = ng - prevY;
+    if (rise > 0.35 && rise > Math.hypot(vs, vu) * dt * 2.6 && this.invuln <= 0) {
+      this.y = prevY;
+      this._startCrash('obstacle');
+      return;
+    }
+    // trees, rocks and posts
+    if (tr.obstacleAt && this.invuln <= 0 && tr.obstacleAt(this.s, this.u, ng + 0.3)) {
+      this.y = ng;
+      this._startCrash('tree');
+      return;
+    }
 
     // quarter-pipe coping launch
     const au = Math.abs(this.u);
-    if (au > EDGE_U - 0.3 && au < EDGE_U + 0.2 && this.u * vu > 0 && prevY < tr.baseY(this.s) + BANK_TOP + 0.1) {
+    if (banks && au > EDGE_U - 0.3 && au < EDGE_U + 0.2 && this.u * vu > 0 && prevY < tr.baseY(this.s) + BANK_TOP + 0.1) {
       const gu = tr.lateralSlope(Math.sign(this.u) * (EDGE_U - 0.35));
       const up = Math.abs(vu) * Math.sqrt(1 + gu * gu) * 0.92;
       this.u = Math.sign(this.u) * (EDGE_U - 0.3);
@@ -235,15 +263,27 @@ export class Rider {
       return;
     }
 
-    // natural launch off lips and crests
+    // natural launch off lips and crests, or off the edge of a drop
     const yBall = prevY + this.surfaceVy * dt - 0.5 * G * dt * dt;
-    if (yBall > ng + 0.06 && this.surfaceVy > 0.6) {
+    if (yBall > ng + 0.06 && (this.surfaceVy > 0.6 || yBall > ng + 0.15)) {
       this.y = yBall;
       this.vy = this.surfaceVy - G * dt;
+      // halfpipe walls: go straight up and come back in
+      if (tr.wallLip && this.vy > 2 && tr.wallLip(this.s, this.u, vu)) {
+        const up = Math.hypot(this.vy, vu) * 0.9;
+        this.vy = up;
+        this.vu = -Math.sign(vu) * 0.8;
+        this._takeoff(true);
+        return;
+      }
       this._takeoff(false);
       return;
     }
-    this.surfaceVy = (ng - prevY) / Math.max(dt, 1e-4);
+    // vertical speed of the surface under the board; a step up (roof edge,
+    // rock) must not turn into a launch, so cap it near what the slope predicts
+    const measured = (ng - prevY) / Math.max(dt, 1e-4);
+    const predicted = g.gs * vs + g.gu * vu;
+    this.surfaceVy = Math.min(measured, Math.max(predicted, 0) + 4, 21);
     this.y = ng;
     this.vy = this.surfaceVy;
 
@@ -262,7 +302,7 @@ export class Rider {
 
     // ground combo timer
     this.groundTimer += dt;
-    if (this.groundTimer > 0.6 && au < EDGE_U - 1) this.lastSafe = { s: this.s, u: this.u };
+    if (this.groundTimer > 0.6 && (!banks || au < EDGE_U - 1)) this.lastSafe = { s: this.s, u: this.u, phi: this.phi };
 
     // fx: spray when carving hard / braking
     const carveAmt = Math.abs(steer) * clamp(sp / 20, 0, 1) + brake * clamp(sp / 8, 0, 1.2) + lat * 0.15;
@@ -359,7 +399,12 @@ export class Rider {
     this.u += this.vu * dt;
     this.y += this.vy * dt;
     // bounce off building walls
-    if (Math.abs(this.u) > BUILD_U - 0.7 && this.u * this.vu > 0) this.vu = -this.vu * 0.4;
+    if (Math.abs(this.u) > (tr.uMax ?? BUILD_U - 0.7) && this.u * this.vu > 0) this.vu = -this.vu * 0.4;
+    // trees and rocks
+    if (tr.obstacleAt && this.invuln <= 0 && tr.obstacleAt(this.s, this.u, this.y + 0.4)) {
+      this._startCrash('tree');
+      return;
+    }
 
     // rails
     if (this.vy < 3) {
@@ -373,7 +418,7 @@ export class Rider {
     const ground = tr.height(this.s, this.u);
     if (this.y <= ground) {
       // side impact into an obstacle?
-      if (ground - this.y > 0.65 && ground - prevY > 0.4 && this.invuln <= 0 && ground - tr.height(this.s, this.u, false) > 0.3) {
+      if (ground - this.y > 0.65 && ground - prevY > 0.4 && this.invuln <= 0 && (tr.open || ground - tr.height(this.s, this.u, false) > 0.3)) {
         this.y = prevY;
         this._startCrash('obstacle');
         return;
@@ -538,6 +583,10 @@ export class Rider {
     _q.setFromAxisAngle(this.tumbleAxis, this.tumbleSpeed * dt);
     this.tumble.premultiply(_q);
     if (this.crashT > 2.0) {
+      if (tr.open) {
+        this.respawn(true);
+        return;
+      }
       // respawn at the last safe spot near where we fell
       const s = Math.max(this.lastSafe.s, this.s - 4);
       let u = this.u;
@@ -556,6 +605,36 @@ export class Rider {
       this.invuln = 1.5;
       this.emit('respawn');
     }
+  }
+
+  // Back on the board. After a crash on the open mountain: just past the spot
+  // where we fell (clear of trees, roofs and steep faces); otherwise at the last
+  // spot where we were riding cleanly.
+  respawn(atCrash = false) {
+    const tr = this.track;
+    this.audio?.stopGrind();
+    const keepFinished = this.finished;
+    const L = this.lastSafe;
+    const bad = (s, u) => {
+      const h = tr.height(s, u);
+      if (tr.obstacleAt?.(s, u, h + 0.5) || tr.obstacleAt?.(s + 2, u, h + 0.5) || h - tr.height(s, u, false) > 0.05) return true;
+      const g = tr.gradient(s, u, _g);
+      return Math.abs(g.gs) > 0.7 || Math.abs(g.gu) > 0.7;
+    };
+    let s = atCrash ? this.s + 2 : L.s, u = atCrash ? this.u : L.u;
+    let ok = false;
+    for (let i = 0; i < 40; i++) {
+      if (!bad(s, u)) { ok = true; break; }
+      s += 1.5;
+      u += (i % 2 ? 1 : -1) * Math.min(i, 8) * 0.6;
+    }
+    if (!ok) ({ s, u } = L);
+    this.reset(s, u);
+    this.lastSafe = { s, u, phi: 0 };
+    this.finished = keepFinished;
+    this.vs = 5;
+    this.invuln = 1.6;
+    this.emit('respawn');
   }
 
   // -------------------------------------------------------------- transform & pose

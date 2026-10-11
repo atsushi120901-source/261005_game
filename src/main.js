@@ -4,6 +4,7 @@ import { AudioEngine } from './core/audio.js';
 import { clamp, damp } from './core/utils.js';
 import { STAGES, getStage } from './world/stages.js';
 import { Track } from './world/track.js';
+import { OpenTerrain } from './world/openTerrain.js';
 import { World } from './world/world.js';
 import { RIDERS, getRider } from './player/characters.js';
 import { Character } from './player/character.js';
@@ -52,7 +53,7 @@ class Game {
     this.audio.setMuted(store.get('muted', false));
     this.ui = new UI(this);
 
-    this.stageId = params.get('stage') || store.get('stage', STAGES[0].id);
+    this.stageId = params.get('stage') || store.get('stage2', STAGES[0].id);
     this.riderId = params.get('rider') || store.get('rider', RIDERS[0].id);
     this.state = 'loading';
     this.time = 0;
@@ -115,7 +116,7 @@ class Game {
     }
     this.stage = stage;
     this.stageId = stage.id;
-    this.track = new Track(stage);
+    this.track = stage.terrain === 'open' ? new OpenTerrain(stage) : new Track(stage);
     await this.ui.progress(0.35, `${stage.jp} を建設中...`);
     this.world = new World(this.renderer, this.scene, stage, this.track, this.quality);
     await this.ui.progress(0.7, '雪を降らせています...');
@@ -127,8 +128,8 @@ class Game {
     }
     await this.ui.progress(0.85, 'シェーダーをコンパイル中...');
     // place camera somewhere sensible and precompile everything
-    this.camera.position.copy(this.track.toWorld(10, 0, this.track.baseY(10) + 3));
-    this.camera.lookAt(this.track.toWorld(30, 0, this.track.baseY(30)));
+    this.camera.position.copy(this.track.toWorld(10, 0, this.track.height(10, 0) + 3));
+    this.camera.lookAt(this.track.toWorld(30, 0, this.track.height(30, 0)));
     try {
       this.renderer.compile(this.scene, this.camera);
     } catch (e) {
@@ -152,7 +153,9 @@ class Game {
   }
 
   placeShowcase() {
-    this.rider.reset(this.state === 'title' ? 36 : 24, this.state === 'title' ? -3 : 0);
+    const sp = this.track.spawn;
+    if (sp) this.rider.reset(sp.s + (this.state === 'title' ? 14 : 4), sp.u + (this.state === 'title' ? -3 : 0));
+    else this.rider.reset(this.state === 'title' ? 36 : 24, this.state === 'title' ? -3 : 0);
     this.rider.phi = this.state === 'title' ? 0.5 : 0.35;
     this.rider._updateTransform(0);
     this.character.setPose('idle');
@@ -186,7 +189,7 @@ class Game {
 
   async changeStage(id) {
     if (id === this.stageId) return;
-    store.set('stage', id);
+    store.set('stage2', id);
     await this.loadStage(id);
     this.ui.hideLoading();
     this.placeShowcase();
@@ -206,7 +209,8 @@ class Game {
     this.state = 'countdown';
     this.countdown = 3.2;
     this.lastCount = 4;
-    this.rider.reset(8, 0);
+    const sp = this.track.spawn;
+    this.rider.reset(sp ? sp.s : 8, sp ? sp.u : 0);
     this.fx.reset();
     this.world.tokenAlive.fill(1);
     this.rig.mode = 'follow';
@@ -228,7 +232,7 @@ class Game {
   // Other riders on the slope (mountain stages only).
   spawnNpcs() {
     this.clearNpcs();
-    if (this.stage.terrain !== 'mountain' || this.quality.name === 'LOW') return;
+    if ((this.stage.terrain !== 'mountain' && this.stage.terrain !== 'open') || this.quality.name === 'LOW') return;
     const others = RIDERS.filter((r) => r.id !== this.riderId);
     this.npcs = others.map((def, i) => new NpcRider(this.scene, this.track, def, i + 1));
   }
@@ -236,6 +240,16 @@ class Game {
   clearNpcs() {
     for (const n of this.npcs || []) n.dispose();
     this.npcs = [];
+  }
+
+  // Back on the board at the last clean spot (R key / pause menu).
+  respawnRider() {
+    if (this.state !== 'play' || this.finishT > 0) return;
+    this.ui.grind(null);
+    this.loseCombo();
+    this.rider.respawn();
+    this.rig.snapTo(this.rider);
+    this.ui.trick('RESPAWN', 0, 1, 'small');
   }
 
   pause() {
@@ -500,7 +514,7 @@ class Game {
         }
         this.audio.setRide({ speed: r.speed, carve: r.sprayAmt || 0, grounded: r.state === 'ground', air: r.state === 'air' });
       }
-      for (const n of this.npcs || []) n.update(sdt, r.s);
+      for (const n of this.npcs || []) n.update(sdt, r.s, r.u);
       this.rig.update(sdt, r);
       // hide the body in helmet view
       const pov = this.rig.camMode === 'pov' && !(this.rig.intro > 0) && r.state !== 'crash' && this.finishT <= 0;
@@ -551,3 +565,4 @@ class Game {
 }
 
 window.game = new Game();
+if (new URLSearchParams(location.search).has('debug')) window.__THREE = THREE;

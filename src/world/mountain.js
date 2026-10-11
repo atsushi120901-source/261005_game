@@ -42,7 +42,7 @@ export function rockGeometry(seed, snowy = 0.74) {
 }
 
 // Wind-crusted snow block: flattened faceted lump.
-function chunkGeometry(seed) {
+export function chunkGeometry(seed) {
   const rng = mulberry32(seed);
   let g = new THREE.IcosahedronGeometry(1, 0);
   const p = g.attributes.position;
@@ -62,14 +62,14 @@ function chunkGeometry(seed) {
 }
 
 // Taller, more detailed snowy conifer.
-function pineGeometry(seed) {
+export function pineGeometry(seed) {
   const rng = mulberry32(seed);
-  const parts = [bake(new THREE.CylinderGeometry(0.1, 0.18, 1.6, 6).translate(0, 0.8, 0), new THREE.Matrix4(), 0x3a2a1e)];
+  const parts = [bake(new THREE.CylinderGeometry(0.1, 0.18, 1.6, 5, 1, true).translate(0, 0.8, 0), new THREE.Matrix4(), 0x3a2a1e)];
   const tiers = 5;
   for (let i = 0; i < tiers; i++) {
     const t = i / (tiers - 1);
     const r = 2.0 * (1 - t * 0.85), h = 1.9 - t * 0.6, y = 1.3 + t * 5.6;
-    const c = new THREE.ConeGeometry(r, h, 7, 1);
+    const c = new THREE.ConeGeometry(r, h, 7, 1, true);
     c.translate(0, y, 0);
     c.rotateY(rng() * 6.28);
     const g = bake(c, new THREE.Matrix4());
@@ -186,11 +186,12 @@ export function buildMountainWorld(w) {
 }
 
 // Distant mountain ranges in a ring around the course.
-function buildRanges(w, rng) {
+export function buildRanges(w, rng, opts = {}) {
   const tr = w.track;
   const n = tr.n - 1;
-  const cx = (tr.px[0] + tr.px[n]) / 2, cz = (tr.pz[0] + tr.pz[n]) / 2;
-  const base = tr.baseY(tr.length * 0.5) - 260;
+  const cx = opts.cx ?? (tr.px[0] + tr.px[n]) / 2, cz = opts.cz ?? (tr.pz[0] + tr.pz[n]) / 2;
+  const base = opts.base ?? tr.baseY(tr.length * 0.5) - 260;
+  const R0 = opts.inner ?? 1250;
   const A = 160, R = 20;
   const pos = [], col = [];
   const H = (a, r) => {
@@ -199,7 +200,7 @@ function buildRanges(w, rng) {
     const ridged = 1 - Math.abs(fbm2(x / 950, z / 950, 3));
     const massif = 0.5 + 0.5 * fbm2(x / 1700 + 3, z / 1700, 2);
     const peaks = Math.pow(ridged, 1.7) * (0.45 + 0.75 * massif);
-    const k = clamp((r - 1250) / 900, 0, 1);
+    const k = clamp((r - R0) / 900, 0, 1);
     return base + peaks * (420 + 900 * k) * (0.35 + 0.65 * k) + fbm2(x / 260, z / 260, 3) * 55 * k;
   };
   const grid = [];
@@ -207,7 +208,7 @@ function buildRanges(w, rng) {
     const a = (i / A) * Math.PI * 2;
     const row = [];
     for (let j = 0; j <= R; j++) {
-      const r = 1250 + Math.pow(j / R, 1.3) * 2300;
+      const r = R0 + Math.pow(j / R, 1.3) * 2300;
       row.push(V(cx + Math.cos(a) * r, H(a, r), cz + Math.sin(a) * r));
     }
     grid.push(row);
@@ -434,7 +435,7 @@ function buildStructures(w, rng) {
   w.add(new THREE.Mesh(gb.build(), w.mats.facade), { cast: w.quality.shadows, receive: true });
 }
 
-function netTexture() {
+export function netTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const ctx = c.getContext('2d');
@@ -504,8 +505,8 @@ function buildLift(w, rng) {
   w.lift = { lines, im, spacing, count, m: new THREE.Matrix4(), q: new THREE.Quaternion(), p: V(), d: V() };
 }
 
-export function updateLift(w, t) {
-  const L = w.lift;
+export function updateLift(w, t, lift = w.lift) {
+  const L = lift;
   if (!L) return;
   const per = L.count / 2;
   for (let k = 0; k < 2; k++) {
@@ -529,7 +530,7 @@ export function updateLift(w, t) {
 }
 
 // A small flock circling over the slope ahead of the rider.
-function buildBirds(w) {
+export function buildBirds(w) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([
     0, 0, 0.25, -0.7, 0.25, -0.1, 0, 0, -0.15,

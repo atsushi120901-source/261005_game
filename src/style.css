@@ -127,6 +127,15 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
 #prog-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 2px; }
 #prog-dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff; border-radius: 50%; box-shadow: 0 0 12px #fff; }
 .district { font-family: var(--num); font-size: 16px; letter-spacing: 0.4em; margin-top: 8px; opacity: 0.6; }
+.minimap { position: absolute; left: 28px; bottom: 24px; height: min(46vh, 330px); width: auto; display: none; border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35); background: rgba(20, 30, 50, 0.4); }
+.minimap.on { display: block; }
+.zone-toast { position: absolute; left: 50%; top: 17%; transform: translate(-50%, -8px); text-align: center; font-family: var(--num); font-size: 34px; letter-spacing: 0.18em; color: #fff; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55); opacity: 0; transition: opacity 0.5s, transform 0.5s; pointer-events: none; white-space: nowrap; }
+.zone-toast.on { opacity: 1; transform: translate(-50%, 0); }
+.zone-toast small { display: block; font-family: var(--jp, sans-serif); font-size: 15px; letter-spacing: 0.3em; opacity: 0.85; }
+.zone-toast i { font-style: normal; display: inline-block; width: 0.9em; height: 0.9em; border-radius: 3px; margin-right: 0.4em; vertical-align: -0.05em; }
+.open-only { display: none; }
+body.open-world .open-only { display: block; }
+body.open-world .panel .btn.open-only { display: inline-block; }
 .controls-hint { position: absolute; right: 28px; bottom: 24px; font-size: 12px; line-height: 1.9; background: var(--glass); border: 1px solid var(--line); padding: 10px 14px; border-radius: 6px; transition: opacity 1s; backdrop-filter: blur(6px); }
 .controls-hint b { font-family: var(--num); font-size: 16px; letter-spacing: 0.08em; color: var(--accent2); margin-right: 4px; }
 .controls-hint.hide { opacity: 0; }
@@ -187,6 +196,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; c
   .speed-row { font-size: 46px; }
   .time-row { font-size: 26px; }
   .controls-hint, .title-foot, .district { display: none; }
+  .minimap { left: auto; right: 14px; bottom: auto; top: 150px; height: 30vh; }
+  .zone-toast { font-size: 22px; top: 24%; }
   .hud-bottom { bottom: auto; top: 70px; width: 40vw; }
   .panel { padding: 16px 20px; min-width: 0; width: 92vw; gap: 8px; }
   .panel-title { font-size: 34px; }

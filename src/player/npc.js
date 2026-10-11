@@ -11,7 +11,7 @@ const _f = {};
 export class NpcRider {
   constructor(scene, track, def, seed) {
     this.track = track;
-    this.char = new Character(def);
+    this.char = new Character(def, { cell: 0.02 }); // lighter body for riders seen at a distance
     this.char.root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     scene.add(this.char.root, this.char.extras);
     this.scene = scene;
@@ -21,24 +21,39 @@ export class NpcRider {
     this.edge = 0;
   }
 
-  place(s) {
+  place(s, nearU = 0) {
+    const tr = this.track;
     this.s = s;
-    this.u = (Math.random() - 0.5) * 12;
+    this.route = tr.nearestRoute ? tr.nearestRoute(s, nearU) : null;
     this.base = (Math.random() - 0.5) * 8;
     this.speed = 12 + Math.random() * 5;
     this.width = 3 + Math.random() * 3;
+    if (this.route) {
+      const c = this.route.at(s, {});
+      this.off = (Math.random() - 0.5) * c.w * 0.6;
+      this.u = c.u + this.off;
+    } else {
+      this.u = (Math.random() - 0.5) * 12;
+    }
     this.char.setPose('ride');
     this.char.snap();
     this.char.resetStrands();
   }
 
-  update(dt, playerS) {
+  update(dt, playerS, playerU = 0) {
     const tr = this.track;
-    if (this.s === undefined || this.s < playerS - 25 || this.s > playerS + 260) this.place(Math.min(tr.finishS - 20, playerS + 70 + Math.random() * 90));
+    const far = this.route && (Math.abs(this.u - playerU) > 160 || this.s > this.route.s1 - 10);
+    if (this.s === undefined || this.s < playerS - 25 || this.s > playerS + 260 || far) this.place(Math.min(tr.finishS - 20, playerS + 70 + Math.random() * 90), playerU);
     this.t += dt;
     const prevU = this.u;
     this.s += this.speed * dt;
-    const target = clamp(this.base + Math.sin(this.t * 0.75 + this.seed) * this.width, -9, 9);
+    let target;
+    if (this.route) {
+      const c = this.route.at(Math.min(this.s, this.route.s1), {});
+      target = c.u + clamp(this.off + Math.sin(this.t * 0.75 + this.seed) * this.width, -c.w * 0.7, c.w * 0.7);
+    } else {
+      target = clamp(this.base + Math.sin(this.t * 0.75 + this.seed) * this.width, -9, 9);
+    }
     this.u = damp(this.u, target, 1.4, dt);
     const vu = (this.u - prevU) / Math.max(dt, 1e-4);
     const phi = Math.atan2(vu, this.speed);

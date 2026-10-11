@@ -74,13 +74,14 @@ export class CameraRig {
     }
     this.shotW = damp(this.shotW, this.shot ? 1 : 0, this.shot ? 4.5 : 3, dt);
     if (!this.shot) return;
-    const B = BUILD_U - 2.2;
+    const B = tr.open ? 1e4 : BUILD_U - 2.2;
+    const solid = !!tr.open;
     const p = rider.position;
     if (sh.kind === 'side') {
       // broadcast camera beside the flight path, holding position and panning
       const sm = sh.s0 + sh.vs * sh.T * 0.55;
       const um = clamp(sh.u0 + sh.vu * sh.T * 0.5 + sh.side * 8, -B, B);
-      const y = tr.height(sm, um, false) + Math.max(1.6, sh.apex * 0.4);
+      const y = tr.height(sm, um, solid) + Math.max(1.6, sh.apex * 0.4);
       tr.toWorld(sm, um, y, this.shotPos);
       this.shotLook.copy(p).y += 0.6;
       this.shotFov = this._zoom(p, 3.4);
@@ -88,7 +89,7 @@ export class CameraRig {
       // hero shot from the landing, looking up at the rider against the sky
       const sm = sh.s0 + sh.vs * sh.T * 0.8 + 5;
       const um = clamp(sh.u0 + sh.vu * sh.T * 0.8 + sh.side * 4.5, -B, B);
-      tr.toWorld(sm, um, tr.height(sm, um, false) + 0.8, this.shotPos);
+      tr.toWorld(sm, um, tr.height(sm, um, solid) + 0.8, this.shotPos);
       this.shotLook.copy(p).y += 0.4;
       this.shotFov = this._zoom(p, 4.2);
     } else if (sh.kind === 'orbit') {
@@ -97,7 +98,7 @@ export class CameraRig {
       const a = sh.a0 + Math.PI + sh.side * (k * k * (3 - 2 * k)) * 2.4;
       const um = clamp(rider.u + Math.sin(a) * 6.2, -B, B);
       const sm = rider.s + Math.cos(a) * 6.2;
-      tr.toWorld(sm, um, Math.max(rider.y + 1.2, tr.height(sm, um, false) + 1), this.shotPos);
+      tr.toWorld(sm, um, Math.max(rider.y + 1.2, tr.height(sm, um, solid) + 1), this.shotPos);
       this.shotLook.copy(p).y += 0.7;
       this.shotFov = 58;
     } else if (sh.kind === 'grind') {
@@ -130,8 +131,9 @@ export class CameraRig {
     if (this.mode === 'follow') {
       const air = rider.state === 'air';
       if (sp > 1.5) this.dir = dampAngle(this.dir, Math.atan2(rider.vu, rider.vs), air ? 1.5 : 3.5, dt);
-      // keep facing downhill-ish
-      this.dir = clamp(this.dir, -1.2, 1.2);
+      // keep facing downhill-ish (the open mountain allows long traverses)
+      const dmax = tr.open ? 1.75 : 1.2;
+      this.dir = clamp(this.dir, -dmax, dmax);
       const dist = 4.4 + Math.min(sp, 35) * 0.055 + (air ? 0.9 : 0);
       const hgt = 1.85 + (air ? 0.3 : 0);
       // cinematic side offset during big airs
@@ -139,8 +141,8 @@ export class CameraRig {
       this.side = damp(this.side, wantSide, 1.8, dt);
       const ts = rider.s - Math.cos(this.dir) * dist;
       let tu = rider.u - Math.sin(this.dir) * dist + this.side;
-      tu = clamp(tu, -(BUILD_U - 1.6), BUILD_U - 1.6);
-      const ground = tr.height(ts, tu, false) + 1.0;
+      if (!tr.open) tu = clamp(tu, -(BUILD_U - 1.6), BUILD_U - 1.6);
+      const ground = tr.height(ts, tu, !!tr.open) + 1.0;
       let ty = Math.max(ground, rider.y + hgt);
       if (air) ty = Math.max(ground + 0.5, rider.y + hgt - Math.min(1.6, rider.airTime * 1.2));
       if (rider.state === 'crash') ty = Math.max(ground + 1.5, rider.y + 3.5);

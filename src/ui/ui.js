@@ -1,6 +1,7 @@
 import { STAGES } from '../world/stages.js';
 import { RIDERS } from '../player/characters.js';
 import { trickName } from '../player/rider.js';
+import { Minimap, zoneLabel } from './minimap.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
@@ -18,6 +19,7 @@ export class UI {
     this.row = 0;
     this.cache = {};
     this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    this.minimap = new Minimap($('minimap'));
     this._bind();
     this._touch();
   }
@@ -34,6 +36,7 @@ export class UI {
       g.audio.play('ui');
       if (act === 'resume') g.resume();
       if (act === 'restart') { this.hide('pause'); g.startRun(); }
+      if (act === 'respawn') { g.resume(); g.respawnRider(); }
       if (act === 'select') { this.hide('pause'); g.toSelect(); }
       if (act === 'quality') {
         const order = ['high', 'medium', 'low'];
@@ -173,6 +176,8 @@ export class UI {
       case 'play':
       case 'countdown':
         if (any('Escape', 'KeyP', 'PadStart')) g.pause();
+        if (any('KeyR') && g.state === 'play') g.respawnRider();
+        if (any('KeyM') && g.track.open) this.trick(this.minimap.toggle() ? 'マップ：表示' : 'マップ：非表示', 0, 1, 'small');
         if (any('KeyC', 'PadSelect')) {
           const m = g.rig.cycleMode();
           try { localStorage.setItem('cp_cam', JSON.stringify(m)); } catch { /* ignore */ }
@@ -218,6 +223,14 @@ export class UI {
   resetHud(stage) {
     $('trick-feed').innerHTML = '';
     $('district-name').textContent = `${stage.name}  ・  ${stage.jp}`;
+    const tr = this.game.track;
+    document.body.classList.toggle('open-world', !!tr.open);
+    if (this.minimap.track !== tr) this.minimap.setTrack(tr);
+    this.zone = null;
+    this.zoneCand = null;
+    this.zoneT = 0;
+    this.toastT = 0;
+    $('zone-toast').classList.remove('on');
     $('controls-hint').classList.remove('hide');
     this.hintTimer = 9;
     this.cache = {};
@@ -246,6 +259,8 @@ export class UI {
       this.set('combo-pts', fmt(c.pts));
       $('combo-bar').firstElementChild.style.transform = `scaleX(${Math.max(0, c.timer / 3)})`;
     }
+    if (g.track.open) this._zone(g);
+    this.minimap.update(1 / 60, g);
     const p = Math.min(1, Math.max(0, r.s / g.track.finishS));
     $('prog-fill').style.width = `${p * 100}%`;
     $('prog-dot').style.left = `${p * 100}%`;
@@ -274,6 +289,29 @@ export class UI {
     }
     if (this.grindEl && r.state === 'grind') {
       this.grindEl.querySelector('.tp').textContent = `+${fmt(r.grindTime * 520 * r.h.grind + 120)}`;
+    }
+  }
+
+  // Announce the route / area the rider is in (debounced so edges don't flicker).
+  _zone(g) {
+    const r = g.rider;
+    const z = g.track.zoneName(r.s, r.u);
+    if (z !== this.zoneCand) { this.zoneCand = z; this.zoneT = 0; }
+    this.zoneT += 1 / 60;
+    if (this.zoneCand !== this.zone && this.zoneT > 0.4) {
+      this.zone = z;
+      $('district-name').textContent = `${zoneLabel(z)}  ・  ${z.jp}`;
+      if (g.state === 'play') {
+        const el = $('zone-toast');
+        const sw = z.color !== undefined ? `<i style="background:${hex(z.color)}"></i>` : '';
+        el.innerHTML = `${sw}${zoneLabel(z)}<small>${z.jp}</small>`;
+        el.classList.add('on');
+        this.toastT = 2.6;
+      }
+    }
+    if (this.toastT > 0) {
+      this.toastT -= 1 / 60;
+      if (this.toastT <= 0) $('zone-toast').classList.remove('on');
     }
   }
 

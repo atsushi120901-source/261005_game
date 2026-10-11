@@ -5,6 +5,7 @@ import { mulberry32, clamp } from '../core/utils.js';
 import { HALF_W, BANK_END, BANK_TOP, EDGE_U, BUILD_U } from './track.js';
 import { GeoBuilder, bake } from './geom.js';
 import { buildMountainWorld, updateLift, updateBirds, rockGeometry } from './mountain.js';
+import { buildOpenWorld, updateOpenWorld } from './openWorld.js';
 import {
   createSnowMaterial, createFacadeMaterial, createScreenMaterial, createSkyMaterial, sharedUniforms,
 } from '../gfx/materials.js';
@@ -12,6 +13,7 @@ import { neonSignTexture, glowTexture, bannerTexture, vendingTexture } from '../
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UP = V(0, 1, 0);
+const _tm = new THREE.Matrix4(), _tq = new THREE.Quaternion(), _ts = V(), _tp = V();
 
 export class World {
   constructor(renderer, scene, stage, track, quality) {
@@ -42,20 +44,24 @@ export class World {
       const off = stage.sky.sunAlongTrack;
       this.sunDir.set(dx / l - (dz / l) * off, stage.sky.sunDir[1], dz / l + (dx / l) * off).normalize();
     }
-    this.isMountain = stage.terrain === 'mountain';
+    this.isOpen = stage.terrain === 'open';
+    this.isMountain = stage.terrain === 'mountain' || this.isOpen;
     this._buildSky();
     this._buildLights();
-    this._buildTrack();
-    if (this.isMountain) {
+    if (this.isOpen) {
+      buildOpenWorld(this);
+    } else if (this.isMountain) {
+      this._buildTrack();
       buildMountainWorld(this);
     } else {
+      this._buildTrack();
       this._buildEdges();
       this._buildBuildings();
       this._buildProps();
     }
     this._buildFeatures();
     this._buildTokens();
-    this._buildGates();
+    if (!this.isOpen) this._buildGates();
     this._finishGlows();
     this._buildEnv();
   }
@@ -267,6 +273,13 @@ export class World {
   _pathTube(points, radius, material, radial = 6, opts = {}) {
     const curve = new THREE.CatmullRomCurve3(points);
     const geo = new THREE.TubeGeometry(curve, Math.max(4, points.length * 2), radius, radial, false);
+    if (this._tubeBatch) {
+      // collected and merged per material (fewer draw calls)
+      let b = this._tubeBatch.get(material);
+      if (!b) this._tubeBatch.set(material, (b = { geos: [], opts }));
+      b.geos.push(geo);
+      return null;
+    }
     const mesh = new THREE.Mesh(geo, material);
     this.add(mesh, opts);
     return mesh;
@@ -1377,9 +1390,9 @@ export class World {
   _buildFeatures() {
     const tr = this.track;
     const st = this.stage;
-    const accent = st.id === 'golden' ? 0xff8a2a : st.id === 'aurora' ? 0x4affc0 : st.id === 'summit' ? 0x2a7dff : 0x2de2ff;
+    const accent = st.id === 'golden' ? 0xff8a2a : st.id === 'aurora' ? 0x4affc0 : this.isMountain ? 0x2a7dff : 0x2de2ff;
     const lipMat = this.emissive(accent, 3);
-    const accent2 = st.id === 'neon' ? 0xff2d8a : st.id === 'summit' ? 0xff5a14 : accent;
+    const accent2 = st.id === 'neon' ? 0xff2d8a : this.isMountain ? 0xff5a14 : accent;
     const poleMat = this.emissive(accent2, 2.5);
     const m = new THREE.Matrix4();
     const lipList = [], flagList = [];
@@ -1428,7 +1441,8 @@ export class World {
     this._instanced(tipGeo, poleMat, flagList);
 
     // Rails and ledges (with an LED under-glow so they read at speed)
-    const supports = [];
+    this._tubeBatch = new Map();
+    const supports = [], woodSupports = [];
     const railGlow = this.emissive(accent, 2.2);
     for (const r of tr.rails) {
       const pts = [];
@@ -1436,7 +1450,7 @@ export class World {
       if (r.type === 'ledge') {
         this._ledge(r);
       } else {
-        if (this.isMountain) {
+        if (this.isMountain && r.style !== 'metal') {
           // a felled log laid as a jib
           const logPts = pts.map((p) => p.clone().add(new THREE.Vector3(0, -0.03, 0)));
           this._pathTube(logPts, 0.085, this.mats.log, 10, { cast: this.quality.shadows, receive: true });
@@ -1444,7 +1458,7 @@ export class World {
             const top = tr.railY(r, s) - 0.12;
             const gy = tr.height(s, r.u, false) - 0.3;
             const p = tr.toWorld(s, r.u, gy);
-            supports.push(new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(s)), V(1, top - gy, 1)));
+            woodSupports.push(new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(s)), V(1, top - gy, 1)));
           }
           continue;
         }
@@ -1459,8 +1473,13 @@ export class World {
         }
       }
     }
-    if (this.isMountain) this._instanced(new THREE.BoxGeometry(1.0, 1, 0.14).translate(0, 0.5, 0), this.mats.wood, supports, { cast: this.quality.shadows });
-    else this._instanced(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), this.mats.darkMetal, supports);
+    for (const [mat, b] of this._tubeBatch) {
+      this.add(new THREE.Mesh(mergeGeometries(b.geos), mat), b.opts);
+      b.geos.forEach((g) => g.dispose());
+    }
+    this._tubeBatch = null;
+    this._instanced(new THREE.BoxGeometry(1.0, 1, 0.14).translate(0, 0.5, 0), this.mats.wood, woodSupports, { cast: this.quality.shadows });
+    this._instanced(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), this.mats.darkMetal, supports);
 
     // Stair nosings
     const noses = [];
@@ -1505,8 +1524,9 @@ export class World {
       const pc = tr.toWorld(sm, r.u, top);
       caps.push(bake(new THREE.BoxGeometry(0.76, 0.05, len), new THREE.Matrix4().compose(pc, q, V(1, 1, 1))));
     }
-    this.add(new THREE.Mesh(mergeGeometries(geos), this.isMountain ? this.mats.wood : this.mats.concrete), { cast: this.quality.shadows, receive: true });
-    this.add(new THREE.Mesh(mergeGeometries(caps), this.isMountain ? this.mats.log : this.mats.paint), { cast: false });
+    const box = r.style === 'box';
+    this.add(new THREE.Mesh(mergeGeometries(geos), box ? this.mats.paint : this.isMountain ? this.mats.wood : this.mats.concrete), { cast: this.quality.shadows, receive: true });
+    this.add(new THREE.Mesh(mergeGeometries(caps), box ? this.mats.metal : this.isMountain ? this.mats.log : this.mats.paint), { cast: false });
   }
 
   _buildCars() {
@@ -1652,21 +1672,25 @@ export class World {
     this._updateTokens(0);
   }
 
-  _updateTokens(t) {
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const sc = V();
+  // Only live snowflakes near the rider are drawn (compacted into the first instances).
+  _updateTokens(t, focus) {
+    const m = _tm, q = _tq, sc = _ts.set(1, 1, 1), pp = _tp;
     const glow = this.tokenGlow.geometry.attributes.position;
+    const R2 = 240 * 240;
+    let n = 0;
     for (let i = 0; i < this.tokenPos.length; i++) {
-      const alive = this.tokenAlive[i];
       const p = this.tokenPos[i];
+      if (!this.tokenAlive[i]) { glow.setY(i, -99999); continue; }
+      glow.setY(i, p.y);
+      if (focus) {
+        const dx = p.x - focus.x, dz = p.z - focus.z;
+        if (dx * dx + dz * dz > R2) continue;
+      }
       q.setFromAxisAngle(UP, t * 2.2 + i * 0.7);
-      const s = alive ? 1 : 0;
-      sc.set(s, s, s);
-      m.compose(V(p.x, p.y + Math.sin(t * 2.5 + i) * 0.12, p.z), q, sc);
-      this.tokenMesh.setMatrixAt(i, m);
-      if (!alive) glow.setY(i, -99999);
+      m.compose(pp.set(p.x, p.y + Math.sin(t * 2.5 + i) * 0.12, p.z), q, sc);
+      this.tokenMesh.setMatrixAt(n++, m);
     }
+    this.tokenMesh.count = n;
     this.tokenMesh.instanceMatrix.needsUpdate = true;
     glow.needsUpdate = true;
   }
@@ -1775,9 +1799,11 @@ export class World {
     this.sun.position.copy(focus).addScaledVector(this.shadowDir, 160);
     if (this.aviationMat) this.aviationMat.opacity = Math.sin(t * 3) > 0.2 ? 1 : 0.1;
     if (this.carHazardMat) this.carHazardMat.color.setRGB(2.5, 0.3, 0.1).multiplyScalar(0.5 + 0.5 * (Math.sin(t * 5) > 0 ? 1 : 0.2));
-    this._updateTokens(t);
+    this._updateTokens(t, focus);
     this._updateTraffic(t);
-    if (this.isMountain) {
+    if (this.isOpen) {
+      updateOpenWorld(this, t, focus, camera);
+    } else if (this.isMountain) {
       updateLift(this, t);
       updateBirds(this, t, focus);
     }
