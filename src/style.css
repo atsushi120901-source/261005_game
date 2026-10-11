@@ -196,7 +196,7 @@ body.open-world .panel .btn.open-only { display: inline-block; }
   .speed-row { font-size: 46px; }
   .time-row { font-size: 26px; }
   .controls-hint, .title-foot, .district { display: none; }
-  .minimap { left: auto; right: 14px; bottom: auto; top: 150px; height: 30vh; }
+  .minimap { left: auto; right: 14px; bottom: auto; top: 122px; height: 24vh; }
   .zone-toast { font-size: 22px; top: 24%; }
   .hud-bottom { bottom: auto; top: 70px; width: 40vw; }
   .panel { padding: 16px 20px; min-width: 0; width: 92vw; gap: 8px; }

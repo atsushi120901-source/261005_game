@@ -124,6 +124,14 @@ function chunkMesh(w, c, step) {
   const idx = [];
   const grid = [];
   for (let a = 0; a < nr; a++) for (let b = 0; b < nc; b++) grid.push(put(rows[a], cols[b], 0));
+  // pistes stay snow-covered however steep they get
+  const piste = new Uint8Array(v);
+  for (let a = 0; a < nr; a++) {
+    for (let b = 0; b < nc; b++) {
+      const k = grid[a * nc + b];
+      piste[k] = tr.routeAt(S_MIN + rows[a] * CELL, -U_HALF + cols[b] * CELL, 0) ? 1 : 0;
+    }
+  }
   const rock = [], rcol = [];
   const P = (k) => [pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]];
   const triangle = (a, b, d) => {
@@ -133,8 +141,9 @@ function chunkMesh(w, c, step) {
     let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
     let tri = [a, b, d];
     if (ny < 0) { tri = [a, d, b]; nx = -nx; ny = -ny; nz = -nz; }
-    const ln = Math.hypot(nx, ny, nz);
-    if (ny / ln < 0.47) {
+    // rock where the smoothed surface is steep (avoids a checkerboard of facets)
+    const sny = (nor[a * 3 + 1] + nor[b * 3 + 1] + nor[d * 3 + 1]) / 3;
+    if (sny < 0.5 && !(piste[a] || piste[b] || piste[d])) {
       const shade = 0.85 + 0.3 * fbm2(A[0] / 9, A[2] / 9, 2);
       for (const k of tri) { rock.push(...P(k)); rcol.push(ROCK[0] * shade, ROCK[1] * shade, ROCK[2] * shade); }
     } else idx.push(...tri);
@@ -791,7 +800,8 @@ export function updateOpenWorld(w, t, focus, camera) {
     const d = Math.sqrt(dx * dx + dz * dz + dy * dy);
     let L = d < LOD_DIST[0] ? 0 : d < LOD_DIST[1] ? 1 : d < LOD_DIST[2] ? 2 : d < LOD_DIST[3] ? 3 : 4;
     if (L === 0 && !c.levels[0]) {
-      if (builds < 3) { c.levels[0] = chunkMesh(w, c, 1); builds++; } else L = 1;
+      // stream in at most one fine chunk per frame (nearest first would need sorting; the ring is small)
+      if (builds < 1) { c.levels[0] = chunkMesh(w, c, 1); builds++; } else { L = 1; O.pending = true; }
     }
     if (L !== c.level) {
       if (c.level >= 0 && c.levels[c.level]) c.levels[c.level].visible = false;
@@ -805,7 +815,7 @@ export function updateOpenWorld(w, t, focus, camera) {
       c.levels[0] = null;
     }
   }
-  if (builds === 3) O.timer = 1;
+  if (O.pending) { O.timer = 1; O.pending = false; }
   // small features vanish into the distance
   for (const m of O.featGroups) {
     const c = m.geometry.boundingSphere.center;

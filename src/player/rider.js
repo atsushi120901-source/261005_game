@@ -270,7 +270,7 @@ export class Rider {
       this.vy = this.surfaceVy - G * dt;
       // halfpipe walls: go straight up and come back in
       if (tr.wallLip && this.vy > 2 && tr.wallLip(this.s, this.u, vu)) {
-        const up = Math.hypot(this.vy, vu) * 0.9;
+        const up = Math.min(Math.hypot(this.vy, vu) * 0.8, 11.5);
         this.vy = up;
         this.vu = -Math.sign(vu) * 0.8;
         this._takeoff(true);

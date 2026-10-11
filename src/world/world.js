@@ -1442,7 +1442,7 @@ export class World {
 
     // Rails and ledges (with an LED under-glow so they read at speed)
     this._tubeBatch = new Map();
-    const supports = [], woodSupports = [];
+    const supports = [], woodSupports = [], logCaps = [], logRings = [];
     const railGlow = this.emissive(accent, 2.2);
     for (const r of tr.rails) {
       const pts = [];
@@ -1454,6 +1454,14 @@ export class World {
           // a felled log laid as a jib
           const logPts = pts.map((p) => p.clone().add(new THREE.Vector3(0, -0.03, 0)));
           this._pathTube(logPts, 0.085, this.mats.log, 10, { cast: this.quality.shadows, receive: true });
+          // sawn ends showing the light heartwood
+          for (const [a, b] of [[logPts[0], logPts[1]], [logPts[logPts.length - 1], logPts[logPts.length - 2]]]) {
+            const cap = new THREE.CircleGeometry(0.085, 10);
+            const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), V().subVectors(a, b).normalize());
+            logCaps.push(cap.applyMatrix4(new THREE.Matrix4().compose(a, q, V(1, 1, 1))));
+            const ring = new THREE.RingGeometry(0.075, 0.087, 10);
+            logRings.push(ring.applyMatrix4(new THREE.Matrix4().compose(a.clone().addScaledVector(V().subVectors(a, b).normalize(), 0.002), q, V(1, 1, 1))));
+          }
           for (let s = r.s0 + 0.8; s < r.s1; s += 3) {
             const top = tr.railY(r, s) - 0.12;
             const gy = tr.height(s, r.u, false) - 0.3;
@@ -1478,6 +1486,12 @@ export class World {
       b.geos.forEach((g) => g.dispose());
     }
     this._tubeBatch = null;
+    if (logCaps.length) {
+      const capMat = new THREE.MeshStandardMaterial({ color: 0xc9a77c, roughness: 0.9 });
+      this.disposables.push(capMat);
+      this.add(new THREE.Mesh(mergeGeometries(logCaps), capMat));
+      this.add(new THREE.Mesh(mergeGeometries(logRings), this.mats.log));
+    }
     this._instanced(new THREE.BoxGeometry(1.0, 1, 0.14).translate(0, 0.5, 0), this.mats.wood, woodSupports, { cast: this.quality.shadows });
     this._instanced(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), this.mats.darkMetal, supports);
 
