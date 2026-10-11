@@ -142,7 +142,7 @@ export class CameraRig {
       const ts = rider.s - Math.cos(this.dir) * dist;
       let tu = rider.u - Math.sin(this.dir) * dist + this.side;
       if (!tr.open) tu = clamp(tu, -(BUILD_U - 1.6), BUILD_U - 1.6);
-      const ground = tr.height(ts, tu, !!tr.open) + 1.0;
+      const ground = tr.height(ts, tu, !!tr.open, rider.y + 1.2) + 1.0;
       let ty = Math.max(ground, rider.y + hgt);
       if (air) ty = Math.max(ground + 0.5, rider.y + hgt - Math.min(1.6, rider.airTime * 1.2));
       if (rider.state === 'crash') ty = Math.max(ground + 1.5, rider.y + 3.5);

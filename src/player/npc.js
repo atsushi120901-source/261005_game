@@ -31,6 +31,9 @@ export class NpcRider {
     if (this.route) {
       const c = this.route.at(s, {});
       this.off = (Math.random() - 0.5) * c.w * 0.6;
+      // keep off a planted median: ride one of the carriageways
+      const m = this.route.median;
+      if (m) this.off = (Math.random() < 0.5 ? -1 : 1) * (m + 1.5 + Math.random() * (c.w - m) * 0.4);
       this.u = c.u + this.off;
     } else {
       this.u = (Math.random() - 0.5) * 12;
@@ -50,7 +53,10 @@ export class NpcRider {
     let target;
     if (this.route) {
       const c = this.route.at(Math.min(this.s, this.route.s1), {});
-      target = c.u + clamp(this.off + Math.sin(this.t * 0.75 + this.seed) * this.width, -c.w * 0.7, c.w * 0.7);
+      let d = clamp(this.off + Math.sin(this.t * 0.75 + this.seed) * this.width, -c.w * 0.7, c.w * 0.7);
+      const m = this.route.median;
+      if (m) d = Math.sign(this.off) * Math.max(m + 1.5, Math.abs(d));
+      target = c.u + d;
     } else {
       target = clamp(this.base + Math.sin(this.t * 0.75 + this.seed) * this.width, -9, 9);
     }

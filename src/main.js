@@ -5,6 +5,7 @@ import { clamp, damp } from './core/utils.js';
 import { STAGES, getStage } from './world/stages.js';
 import { Track } from './world/track.js';
 import { OpenTerrain } from './world/openTerrain.js';
+import { CityTerrain } from './world/cityTerrain.js';
 import { World } from './world/world.js';
 import { RIDERS, getRider } from './player/characters.js';
 import { Character } from './player/character.js';
@@ -116,7 +117,7 @@ class Game {
     }
     this.stage = stage;
     this.stageId = stage.id;
-    this.track = stage.terrain === 'open' ? new OpenTerrain(stage) : new Track(stage);
+    this.track = stage.terrain === 'open' ? new OpenTerrain(stage) : stage.terrain === 'city' ? new CityTerrain(stage) : new Track(stage);
     await this.ui.progress(0.35, `${stage.jp} を建設中...`);
     this.world = new World(this.renderer, this.scene, stage, this.track, this.quality);
     await this.ui.progress(0.7, '雪を降らせています...');
@@ -232,7 +233,7 @@ class Game {
   // Other riders on the slope (mountain stages only).
   spawnNpcs() {
     this.clearNpcs();
-    if ((this.stage.terrain !== 'mountain' && this.stage.terrain !== 'open') || this.quality.name === 'LOW') return;
+    if (!this.track.open || this.quality.name === 'LOW') return;
     const others = RIDERS.filter((r) => r.id !== this.riderId);
     this.npcs = others.map((def, i) => new NpcRider(this.scene, this.track, def, i + 1));
   }

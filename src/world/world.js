@@ -6,6 +6,7 @@ import { HALF_W, BANK_END, BANK_TOP, EDGE_U, BUILD_U } from './track.js';
 import { GeoBuilder, bake } from './geom.js';
 import { buildMountainWorld, updateLift, updateBirds, rockGeometry } from './mountain.js';
 import { buildOpenWorld, updateOpenWorld } from './openWorld.js';
+import { buildCityWorld } from './cityWorld.js';
 import {
   createSnowMaterial, createFacadeMaterial, createScreenMaterial, createSkyMaterial, sharedUniforms,
 } from '../gfx/materials.js';
@@ -44,11 +45,14 @@ export class World {
       const off = stage.sky.sunAlongTrack;
       this.sunDir.set(dx / l - (dz / l) * off, stage.sky.sunDir[1], dz / l + (dx / l) * off).normalize();
     }
-    this.isOpen = stage.terrain === 'open';
-    this.isMountain = stage.terrain === 'mountain' || this.isOpen;
+    this.isCity = stage.terrain === 'city';
+    this.isOpen = stage.terrain === 'open' || this.isCity;
+    this.isMountain = stage.terrain === 'mountain' || stage.terrain === 'open';
     this._buildSky();
     this._buildLights();
-    if (this.isOpen) {
+    if (this.isCity) {
+      buildCityWorld(this);
+    } else if (this.isOpen) {
       buildOpenWorld(this);
     } else if (this.isMountain) {
       this._buildTrack();
@@ -1405,7 +1409,7 @@ export class World {
       lipList.push(new THREE.Matrix4().compose(tr.toWorld(sLip - 0.05, k.u0, yLip + 0.02), q, V(k.w, 1, 1)));
       for (const sd of [-1, 1]) {
         const u = k.u0 + sd * (k.w / 2 + 0.6);
-        const y = tr.height(sLip - 0.6, u, false);
+        const y = k.base ? k.base(sLip - 0.6, u) : tr.height(sLip - 0.6, u, false);
         flagList.push(new THREE.Matrix4().compose(tr.toWorld(sLip - 0.6, u, y), q, V(1, k.mega ? 2.2 : 1, 1)));
         if (k.mega) {
           const p = tr.toWorld(sLip - 0.6, u, y + 4.6);
@@ -1550,7 +1554,7 @@ export class World {
       const rocks = [], snow = [];
       tr.cars.forEach((c, i) => {
         const sm = c.s0 + c.len / 2;
-        const gy = tr.height(sm, c.u0, false);
+        const gy = c.base ? c.base(sm, c.u0) : tr.height(sm, c.u0, false);
         const q = new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(sm));
         const m = new THREE.Matrix4().compose(tr.toWorld(sm, c.u0, gy + 0.55), q, V(1.15, 1.25, 2.45));
         rocks.push(bake(rockGeometry(500 + i, 0.8), m));
@@ -1563,39 +1567,45 @@ export class World {
       return;
     }
     const rng = mulberry32(this.stage.seed + 31);
-    const body = [], glass = [], wheels = [], lights = [], tails = [], snow = [];
     const colors = [0xb8261e, 0x1d3f8a, 0xe8e8e8, 0x1a1a1f, 0xf2c20f, 0x2e6b4a, 0x8a8f99, 0x5a2a6a];
-    const bodyGeo = new RoundedBoxGeometry(1.86, 0.62, 4.4, 3, 0.14);
-    const cabGeo = new RoundedBoxGeometry(1.62, 0.52, 2.3, 3, 0.16);
-    const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 14).rotateZ(Math.PI / 2);
+    const { bodyGeo, cabGeo } = carGeometries();
+    const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12).rotateZ(Math.PI / 2);
     const lightGeo = new THREE.BoxGeometry(0.36, 0.12, 0.05);
+    // grouped in bands along the fall line so far-off cars are culled
+    const bands = new Map();
     for (const c of tr.cars) {
       const sm = c.s0 + c.len / 2;
-      const gy = tr.height(sm, c.u0, false);
+      const k = Math.floor(sm / 200);
+      if (!bands.has(k)) bands.set(k, { body: [], glass: [], wheels: [], lights: [], tails: [], snow: [] });
+      const B = bands.get(k);
+      const gy = c.base ? c.base(sm, c.u0) : tr.height(sm, c.u0, false);
       const q = new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(sm));
       const base = new THREE.Matrix4().compose(tr.toWorld(sm, c.u0, gy), q, V(1, 1, 1));
       const local = (x, y, z) => new THREE.Matrix4().multiplyMatrices(base, new THREE.Matrix4().makeTranslation(x, y, z));
       const color = rng.pick(colors);
-      body.push(bake(bodyGeo, local(0, 0.6, 0), color));
-      glass.push(bake(cabGeo, local(0, 1.18, 0.2)));
-      for (const [x, z] of [[-0.86, -1.38], [0.86, -1.38], [-0.86, 1.38], [0.86, 1.38]]) wheels.push(bake(wheelGeo, local(x, 0.34, z)));
+      B.body.push(bake(bodyGeo, local(0, 0, 0), color));
+      B.glass.push(bake(cabGeo, local(0, 0, 0)));
+      for (const [x, z] of [[-0.8, -1.38], [0.8, -1.38], [-0.8, 1.38], [0.8, 1.38]]) B.wheels.push(bake(wheelGeo, local(x, 0.34, z)));
       for (const x of [-0.62, 0.62]) {
-        lights.push(bake(lightGeo, local(x, 0.72, -2.21)));
-        tails.push(bake(lightGeo, local(x, 0.75, 2.21)));
+        B.lights.push(bake(lightGeo, local(x, 0.66, -2.2)));
+        B.tails.push(bake(lightGeo, local(x, 0.74, 2.21)));
       }
       // snow cap from the physics heightfield
-      snow.push(this._carSnow(c));
+      B.snow.push(this._carSnow(c));
       this.lightSpots.push({ p: tr.toWorld(sm, c.u0, gy + 0.8), color: new THREE.Color(0xff3020), power: 3 });
     }
-    if (!body.length) return;
+    if (!bands.size) return;
     const sh = this.quality.shadows;
-    this.add(new THREE.Mesh(mergeGeometries(body), this.mats.carBody), { cast: sh, receive: true });
-    this.add(new THREE.Mesh(mergeGeometries(glass), this.mats.glass), { cast: sh });
-    this.add(new THREE.Mesh(mergeGeometries(wheels), this.mats.rubber));
-    this.add(new THREE.Mesh(mergeGeometries(lights), this.emissive(0xfff2d0, 1.2)));
-    this.carTail = this.add(new THREE.Mesh(mergeGeometries(tails), this.emissive(0xff2a10, 2.5)));
-    this.carHazardMat = this.carTail.material;
-    this.add(new THREE.Mesh(mergeGeometries(snow), this.mats.snow), { cast: sh, receive: true });
+    const lightMat = this.emissive(0xfff2d0, 1.2), tailMat = this.emissive(0xff2a10, 2.5);
+    this.carHazardMat = tailMat;
+    for (const B of bands.values()) {
+      this.add(new THREE.Mesh(mergeGeometries(B.body), this.mats.carBody), { cast: sh, receive: true });
+      this.add(new THREE.Mesh(mergeGeometries(B.glass), this.mats.glass), { cast: false });
+      this.add(new THREE.Mesh(mergeGeometries(B.wheels), this.mats.rubber));
+      this.add(new THREE.Mesh(mergeGeometries(B.lights), lightMat));
+      this.add(new THREE.Mesh(mergeGeometries(B.tails), tailMat));
+      this.add(new THREE.Mesh(mergeGeometries(B.snow), this.mats.snow), { cast: sh, receive: true });
+    }
   }
 
   _carSnow(c) {
@@ -1868,4 +1878,38 @@ export class World {
     this.scene.environment = null;
     this.scene.fog = null;
   }
+}
+
+// Parked-car body: side profile with wheel arches, extruded across the width,
+// and a glass cabin on top (the snow cap comes from the physics heightfield).
+let _carGeo = null;
+function carGeometries() {
+  if (_carGeo) return _carGeo;
+  const body = new THREE.Shape();
+  body.moveTo(-2.15, 0.3);
+  body.lineTo(-1.8, 0.3);
+  body.absarc(-1.38, 0.3, 0.42, Math.PI, 0, true);
+  body.lineTo(0.96, 0.3);
+  body.absarc(1.38, 0.3, 0.42, Math.PI, 0, true);
+  body.lineTo(2.15, 0.3);
+  body.lineTo(2.24, 0.52);
+  body.lineTo(2.18, 0.76);
+  body.lineTo(1.25, 0.9);
+  body.lineTo(-1.35, 0.93);
+  body.lineTo(-2.12, 0.86);
+  body.lineTo(-2.24, 0.62);
+  body.closePath();
+  const bodyGeo = new THREE.ExtrudeGeometry(body, { depth: 1.66, bevelEnabled: true, bevelThickness: 0.07, bevelSize: 0.05, bevelSegments: 2, curveSegments: 5 })
+    .translate(0, 0, -0.83).rotateY(Math.PI / 2);
+  const cab = new THREE.Shape();
+  cab.moveTo(1.28, 0.86);
+  cab.lineTo(0.42, 1.36);
+  cab.lineTo(-0.78, 1.38);
+  cab.lineTo(-1.42, 0.88);
+  cab.closePath();
+  const cabGeo = new THREE.ExtrudeGeometry(cab, { depth: 1.42, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 1, curveSegments: 1 })
+    .translate(0, 0, -0.71).rotateY(Math.PI / 2);
+  for (const g of [bodyGeo, cabGeo]) { g.deleteAttribute('uv'); g.computeVertexNormals(); }
+  _carGeo = { bodyGeo, cabGeo };
+  return _carGeo;
 }

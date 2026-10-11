@@ -144,6 +144,10 @@ export class Rider {
       this.s = tr.sMin;
       if (this.vs < 0) this.vs = -this.vs * 0.3;
     }
+    if (tr.sEnd !== undefined && this.s > tr.sEnd) {
+      this.s = tr.sEnd;
+      if (this.vs > 0) this.vs = -this.vs * 0.3;
+    }
     if (this.s >= this.track.finishS && !this.finished) {
       this.finished = true;
       this.emit('finish');
@@ -157,7 +161,7 @@ export class Rider {
   _ground(dt, input) {
     const tr = this.track;
     const h = this.h;
-    const g = tr.gradient(this.s, this.u, _g);
+    const g = tr.gradient(this.s, this.u, _g, true, this.y);
     const g2 = 1 + g.gs * g.gs + g.gu * g.gu;
     let vs = this.vs, vu = this.vu;
     // gravity along the surface
@@ -228,17 +232,21 @@ export class Rider {
     const prevY = this.y;
     this.s += vs * dt;
     this.u += vu * dt;
-    const ng = tr.height(this.s, this.u);
+    const ng = tr.height(this.s, this.u, true, prevY);
 
     // obstacles (car sides, walls) -> crash; ordinary steep snow never trips you
-    if (ng - prevY > 0.5 && this.invuln <= 0 && ng - tr.height(this.s, this.u, false) > 0.3) {
-      this.y = prevY;
-      this._startCrash('obstacle');
-      return;
-    }
-    // running into a near-vertical snow face (landing knuckle, rock band) is a crash too
     const rise = ng - prevY;
-    if (rise > 0.35 && rise > Math.hypot(vs, vu) * dt * 2.6 && this.invuln <= 0) {
+    const wall = (rise > 0.5 && ng - tr.height(this.s, this.u, false) > 0.3) || (rise > 0.35 && rise > Math.hypot(vs, vu) * dt * 2.6);
+    if (wall) {
+      if (this.invuln > 0) {
+        // just respawned: walls stop you instead of throwing you onto the roof
+        this.s -= vs * dt;
+        this.u -= vu * dt;
+        this.vs = -vs * 0.2;
+        this.vu = -vu * 0.2;
+        this.surfaceVy = 0;
+        return;
+      }
       this.y = prevY;
       this._startCrash('obstacle');
       return;
@@ -362,7 +370,7 @@ export class Rider {
     const spinIn = this.spinLock ? 0 : rawSteer;
     const flipIn = this.flipLock ? 0 : flipRaw;
     // landing assist: when touchdown is close, line the board up hard
-    const hAbove = Math.max(0, this.y - tr.height(this.s, this.u));
+    const hAbove = Math.max(0, this.y - tr.height(this.s, this.u, true, this.y));
     const tImpact = (this.vy + Math.sqrt(Math.max(0, this.vy * this.vy + 2 * G * hAbove))) / G;
     const assist = tImpact < 0.45 ? 2.6 : 1;
     this.landAssist = assist > 1;
@@ -415,10 +423,18 @@ export class Rider {
       }
     }
 
-    const ground = tr.height(this.s, this.u);
+    const ground = tr.height(this.s, this.u, true, prevY);
     if (this.y <= ground) {
       // side impact into an obstacle?
-      if (ground - this.y > 0.65 && ground - prevY > 0.4 && this.invuln <= 0 && (tr.open || ground - tr.height(this.s, this.u, false) > 0.3)) {
+      if (ground - this.y > 0.65 && ground - prevY > 0.4 && (tr.open || ground - tr.height(this.s, this.u, false) > 0.3)) {
+        if (this.invuln > 0) {
+          this.s -= this.vs * dt;
+          this.u -= this.vu * dt;
+          this.vs *= -0.2;
+          this.vu *= -0.2;
+          this.y = prevY;
+          return;
+        }
         this.y = prevY;
         this._startCrash('obstacle');
         return;
@@ -443,7 +459,7 @@ export class Rider {
       return;
     }
     // project velocity onto the surface
-    const g = tr.gradient(this.s, this.u, _g);
+    const g = tr.gradient(this.s, this.u, _g, true, this.y + 0.5);
     const nx = -g.gs, ny = -g.gu, nz = 1;
     const nl = Math.hypot(nx, ny, nz);
     const vn = (this.vs * nx + this.vu * ny + this.vy * nz) / nl;
@@ -571,7 +587,7 @@ export class Rider {
     this.s += this.vs * dt;
     this.u += this.vu * dt;
     this.y += this.vy * dt;
-    const gnd = tr.height(this.s, this.u);
+    const gnd = tr.height(this.s, this.u, true, this.y + 0.5);
     if (this.y < gnd) {
       this.y = gnd;
       this.vy = Math.abs(this.vy) > 3 ? -this.vy * 0.25 : 0;
@@ -656,7 +672,7 @@ export class Rider {
 
     // ground alignment
     if (this.state === 'ground' || this.state === 'crash') {
-      tr.normal(this.s, this.u, this.normal);
+      tr.normal(this.s, this.u, this.normal, true, this.y + 0.3);
     } else if (this.state === 'grind') {
       this.normal.set(0, 1, 0);
     } else {
@@ -706,10 +722,10 @@ export class Rider {
     wind.y += 2;
     // contact shadow straight below the rider
     const tr = this.track;
-    const gy = tr.height(this.s, this.u);
+    const gy = tr.height(this.s, this.u, true, this.y + 0.3);
     const shadow = {
       p: tr.toWorld(this.s, this.u, gy, _sp),
-      n: this.state === 'ground' ? this.normal : tr.normal(this.s, this.u, _sn),
+      n: this.state === 'ground' ? this.normal : tr.normal(this.s, this.u, _sn, true, this.y + 0.3),
       h: this.state === 'grind' ? this.y - gy : this.y - gy,
       yaw: Math.atan2(-this.forward.x, -this.forward.z),
     };

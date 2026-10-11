@@ -26,6 +26,25 @@ export function buildOpenWorld(w) {
   const rng = mulberry32(w.stage.seed + 909);
   w.crossings = [];
   w.frontBuildings = [];
+  setupOpenWorld(w);
+
+  buildTerrainChunks(w);
+  buildApron(w);
+  buildRanges(w, rng, { cx: 0, cz: -1150, base: tr.baseY(1150) - 300, inner: 1750 });
+  buildFeatureMeshes(w);
+  buildForest(w);
+  buildRocks(w, rng);
+  buildBuildings(w);
+  buildLookouts(w);
+  buildLifts(w);
+  buildSignage(w);
+  buildMarkers(w);
+  buildGates(w);
+  buildBirds(w);
+}
+
+// Shared state, LOD settings and materials for open-world stages.
+export function setupOpenWorld(w) {
   w.open = { chunks: [], featGroups: [], timer: 0, builds: 0 };
   // lighter settings on lower quality presets
   const q = w.quality.name;
@@ -45,24 +64,10 @@ export function buildOpenWorld(w) {
   featMat.polygonOffsetUnits = -4;
   w.disposables.push(featMat);
   w.mats.featSnow = featMat;
-
-  buildTerrainChunks(w);
-  buildApron(w);
-  buildRanges(w, rng, { cx: 0, cz: -1150, base: tr.baseY(1150) - 300, inner: 1750 });
-  buildFeatureMeshes(w);
-  buildForest(w);
-  buildRocks(w, rng);
-  buildBuildings(w);
-  buildLookouts(w);
-  buildLifts(w);
-  buildSignage(w);
-  buildMarkers(w);
-  buildGates(w);
-  buildBirds(w);
 }
 
 // ------------------------------------------------------------------ terrain
-function buildTerrainChunks(w) {
+export function buildTerrainChunks(w) {
   const tr = w.track;
   const { NS, NU, CELL, S_MIN, U_HALF, G } = tr.gridInfo();
   const nci = Math.ceil((NS - 1) / CHUNK), ncj = Math.ceil((NU - 1) / CHUNK);
@@ -116,8 +121,9 @@ function chunkMesh(w, c, step) {
     const ao = 1 - clamp(lap * 0.06, -0.04, 0.12);
     const steep = smoothstep(0.7, 0.47, ny);
     const patch = fbm2(u / 26 + 3, s / 26, 2);
-    const k = ao * (1 - steep * (0.25 + 0.3 * smoothstep(0.0, 0.5, patch)));
-    col[v * 3] = SNOW[0] * k * (1 - 0.03 * steep); col[v * 3 + 1] = SNOW[1] * k; col[v * 3 + 2] = SNOW[2] * k;
+    const tint = tr.groundTint ? tr.groundTint(s, u) : 1;
+    const k = ao * (1 - steep * (0.25 + 0.3 * smoothstep(0.0, 0.5, patch))) * tint;
+    col[v * 3] = SNOW[0] * k * (1 - 0.03 * steep); col[v * 3 + 1] = SNOW[1] * k; col[v * 3 + 2] = SNOW[2] * k * (tint < 0.95 ? 1.02 : 1);
     uv[v * 2] = u / 3; uv[v * 2 + 1] = s / 3;
     return v++;
   };
@@ -129,7 +135,7 @@ function chunkMesh(w, c, step) {
   for (let a = 0; a < nr; a++) {
     for (let b = 0; b < nc; b++) {
       const k = grid[a * nc + b];
-      piste[k] = tr.routeAt(S_MIN + rows[a] * CELL, -U_HALF + cols[b] * CELL, 0) ? 1 : 0;
+      piste[k] = tr.city ? 1 : tr.routeAt(S_MIN + rows[a] * CELL, -U_HALF + cols[b] * CELL, 0) ? 1 : 0;
     }
   }
   const rock = [], rcol = [];
@@ -143,7 +149,7 @@ function chunkMesh(w, c, step) {
     if (ny < 0) { tri = [a, d, b]; nx = -nx; ny = -ny; nz = -nz; }
     // rock where the smoothed surface is steep (avoids a checkerboard of facets)
     const sny = (nor[a * 3 + 1] + nor[b * 3 + 1] + nor[d * 3 + 1]) / 3;
-    if (sny < 0.5 && !(piste[a] || piste[b] || piste[d])) {
+    if (sny < 0.5 && !tr.city && !(piste[a] || piste[b] || piste[d])) {
       const shade = 0.85 + 0.3 * fbm2(A[0] / 9, A[2] / 9, 2);
       for (const k of tri) { rock.push(...P(k)); rcol.push(ROCK[0] * shade, ROCK[1] * shade, ROCK[2] * shade); }
     } else idx.push(...tri);
@@ -288,7 +294,7 @@ function featureSampling(f) {
   }
 }
 
-function buildFeatureMeshes(w) {
+export function buildFeatureMeshes(w) {
   const tr = w.track;
   const geos = [];
   for (const f of tr.features) {
@@ -475,7 +481,7 @@ function updateForest(w, cx, cz) {
   F.nearMeshes.forEach((im, k) => { im.count = counts[k]; im.instanceMatrix.needsUpdate = true; });
 }
 
-function buildRocks(w, rng) {
+export function buildRocks(w, rng) {
   const tr = w.track;
   const rocks = [0, 1, 2, 3].map((i) => rockGeometry(131 + i));
   const ms = rocks.map(() => []);
@@ -668,7 +674,7 @@ function boardTexture(route, arrow) {
   return t;
 }
 
-function buildSignage(w) {
+export function buildSignage(w) {
   const tr = w.track;
   const wood = w.mats.wood;
   for (const g of tr.signs) {
@@ -744,7 +750,7 @@ function buildMarkers(w) {
   if (im) cs.forEach((c, i) => im.setColorAt(i, c));
 }
 
-function buildGates(w) {
+export function buildGates(w) {
   const tr = w.track;
   const mk = (s, u0, half, text, bg, fg, lights) => {
     const y0 = Math.min(tr.ground(s, u0 - half), tr.ground(s, u0), tr.ground(s, u0 + half));
@@ -770,12 +776,14 @@ function buildGates(w) {
     w.add(beam);
     w.lightSpots.push({ p: V(u0, y0 + 6, -s), color: new THREE.Color(lights), power: 60 });
   };
-  mk(26, 0, 13, 'DROP IN', [0x1a1a2e, 0x3a2a6e], 0xffffff, 0x2de2ff);
-  mk(tr.finishS, 0, 26, 'FINISH', [0xff2d6a, 0xffa02d], 0xffffff, 0xffd02d);
+  const G = tr.gates || { start: { s: 26, u: 0, half: 13 }, finish: { s: tr.finishS, u: 0, half: 26 }, flags: 420 };
+  mk(G.start.s, G.start.u, G.start.half, 'DROP IN', [0x1a1a2e, 0x3a2a6e], 0xffffff, 0x2de2ff);
+  mk(G.finish.s, G.finish.u, G.finish.half, 'FINISH', [0xff2d6a, 0xffa02d], 0xffffff, 0xffd02d);
   // a line of flags marks the finish across the whole base area
   const flagM = [], poleM = [];
-  for (let u = -420; u <= 420; u += 14) {
-    if (Math.abs(u) < 30) continue;
+  for (let u = -G.flags; u <= G.flags; u += 14) {
+    if (Math.abs(u - G.finish.u) < G.finish.half + 4) continue;
+    if (tr.height(tr.finishS, u) - tr.ground(tr.finishS, u) > 0.3) continue;
     const y = tr.height(tr.finishS, u);
     poleM.push(new THREE.Matrix4().compose(V(u, y, -tr.finishS), new THREE.Quaternion(), V(1, 1, 1)));
     flagM.push(new THREE.Matrix4().compose(V(u + 0.45, y + 2.3, -tr.finishS), new THREE.Quaternion(), V(1, 1, 1)));
@@ -789,7 +797,8 @@ export function updateOpenWorld(w, t, focus, camera) {
   const O = w.open;
   if (!O) return;
   for (const L of w.lifts || []) updateLift(w, t, L);
-  updateBirds(w, t, focus);
+  if (w.birds) updateBirds(w, t, focus);
+  w.cityUpdate?.(t, focus, camera);
   O.timer -= 1;
   if (O.timer > 0) return;
   O.timer = 6; // re-evaluate LODs every few frames

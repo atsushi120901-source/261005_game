@@ -1,12 +1,9 @@
 import { DIFF } from '../world/openTerrain.js';
 
-// Trail map of the open mountain: shaded relief, forests, colour-coded routes,
-// lifts and buildings, drawn once; the riders are drawn on top every few frames.
-// Oriented "heading up": the fall line points up the screen, so the rider's
-// left and right match the map.
-const U0 = -470, U1 = 470, S0 = -30;
-const SCALE = 5; // metres per base pixel
-
+// Trail map of an open world: shaded relief, forests, colour-coded routes,
+// lifts, building footprints, water and ice, drawn once; the riders are drawn
+// on top every few frames. Oriented "heading up": the fall line points up the
+// screen, so the rider's left and right match the map.
 export class Minimap {
   constructor(canvas) {
     this.canvas = canvas;
@@ -21,8 +18,9 @@ export class Minimap {
     this.base = null;
     this.canvas.classList.toggle('on', !!track.open && this.visible);
     if (!track.open) return;
-    const S1 = track.finishS + 70;
-    this.S1 = S1;
+    const B = track.mapBounds || { u0: -470, u1: 470, s0: -30, s1: track.finishS + 70 };
+    const U0 = B.u0, U1 = B.u1, S0 = B.s0, S1 = B.s1;
+    const SCALE = track.city ? 3 : 5; // metres per base pixel
     const W = Math.round((U1 - U0) / SCALE), H = Math.round((S1 - S0) / SCALE);
     const c = document.createElement('canvas');
     c.width = W;
@@ -31,6 +29,7 @@ export class Minimap {
     const img = ctx.createImageData(W, H);
     // forest density per pixel
     const dens = new Float32Array(W * H);
+    const treeW = track.city ? 0.05 : 0.11;
     for (const t of track.trees) {
       const x = Math.floor((t.u - U0) / SCALE), y = Math.floor((S1 - t.s) / SCALE);
       if (x >= 0 && x < W && y >= 0 && y < H) dens[y * W + x] += 1;
@@ -38,7 +37,6 @@ export class Minimap {
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const s = S1 - (y + 0.5) * SCALE, u = U0 + (x + 0.5) * SCALE;
-        const h = track.ground(s, u);
         const gs = (track.ground(s + SCALE, u) - track.ground(s - SCALE, u)) / (2 * SCALE);
         const gu = (track.ground(s, u + SCALE) - track.ground(s, u - SCALE)) / (2 * SCALE);
         // light from the upper left of the map
@@ -46,31 +44,47 @@ export class Minimap {
         let r = 222 * shade, g = 232 * shade, b = 246 * shade;
         const steep = Math.hypot(gs, gu);
         if (steep > 1.1) { r = 120 * shade; g = 124 * shade; b = 132 * shade; }
+        // water: canals and rivers cut into the ground
+        if (track.city && track.ground(s, u) < track.baseY(s) - 1.2) { r = 70; g = 120; b = 168; }
         // forests: blurred tree density
         let acc = 0;
         for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) acc += dens[(y + dy) * W + x + dx] || 0;
-        const d = Math.min(0.62, acc * 0.11);
+        const d = Math.min(0.62, acc * treeW);
         r = r * (1 - d) + 38 * d; g = g * (1 - d) + 78 * d; b = b * (1 - d) + 66 * d;
-        void h;
         const i = (y * W + x) * 4;
         img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
       }
     }
     ctx.putImageData(img, 0, 0);
     const X = (u) => (u - U0) / SCALE, Y = (s) => (S1 - s) / SCALE;
+    // ice (frozen ponds, rivers, canals)
+    ctx.fillStyle = 'rgba(150, 215, 245, 0.75)';
+    for (const a of track.iceAreas || []) {
+      if (a.r) { ctx.beginPath(); ctx.arc(X(a.u), Y(a.s), a.r / SCALE, 0, Math.PI * 2); ctx.fill(); }
+      else ctx.fillRect(X(Math.max(a.u0, U0)), Y(a.s1), (Math.min(a.u1, U1) - Math.max(a.u0, U0)) / SCALE, (a.s1 - a.s0) / SCALE);
+    }
+    // city streets: cross streets as plain bands under the coloured routes
+    if (track.city) {
+      ctx.fillStyle = 'rgba(150, 160, 178, 0.55)';
+      for (const cs of track.cross || []) {
+        const u0 = Math.max(cs.u0 ?? U0, U0), u1 = Math.min(cs.u1 ?? U1, U1);
+        ctx.fillRect(X(u0), Y(cs.s + cs.hw), (u1 - u0) / SCALE, (cs.hw * 2) / SCALE);
+      }
+    }
     // routes: soft corridor + centre line in the route colour
     for (const r of track.routes) {
       const col = '#' + r.color.toString(16).padStart(6, '0');
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      const sa = Math.max(r.s0 + (track.city ? 0 : 30), S0), sb = Math.min(r.s1 - (track.city ? 0 : 20), S1);
       for (const pass of [0, 1]) {
         ctx.beginPath();
-        for (let s = r.s0 + 30; s <= r.s1 - 20; s += 10) {
+        for (let s = sa; s <= sb; s += 10) {
           const c2 = r.at(s, {});
-          if (s === r.s0 + 30) ctx.moveTo(X(c2.u), Y(s)); else ctx.lineTo(X(c2.u), Y(s));
+          if (s === sa) ctx.moveTo(X(c2.u), Y(s)); else ctx.lineTo(X(c2.u), Y(s));
         }
         ctx.strokeStyle = pass ? col : col + '44';
-        ctx.lineWidth = pass ? 2.6 : 10;
+        ctx.lineWidth = pass ? 2.6 : (track.city ? Math.max(4, (r.pts?.[0]?.[2] ?? 6) * 2 / SCALE) : 10);
         ctx.stroke();
       }
     }
@@ -85,14 +99,24 @@ export class Minimap {
       ctx.stroke();
     }
     ctx.setLineDash([]);
-    // buildings
-    ctx.fillStyle = '#6b4a32';
-    for (const b of track.buildings) ctx.fillRect(X(b.u) - 1.5, Y(b.s) - 1.5, 3, 3);
+    // buildings: footprints
+    ctx.fillStyle = track.city ? '#3d4658' : '#6b4a32';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 0.6;
+    for (const b of track.buildings) {
+      const s0 = b.s0 ?? b.s - b.w / 2, s1 = b.s1 ?? b.s + b.w / 2;
+      const u0 = b.u0 ?? b.u - b.d / 2, u1 = b.u1 ?? b.u + b.d / 2;
+      const w = Math.max(2, (u1 - u0) / SCALE), h = Math.max(2, (s1 - s0) / SCALE);
+      const x = (X(u0) + X(u1)) / 2 - w / 2, y = (Y(s0) + Y(s1)) / 2 - h / 2;
+      ctx.fillRect(x, y, w, h);
+      if (track.city) ctx.strokeRect(x, y, w, h);
+    }
     // start and finish
+    const G = track.gates || { start: { s: 26, u: 0, half: 14 }, finish: { s: track.finishS, u: 0, half: 420 } };
     ctx.fillStyle = '#ff4d6d';
-    ctx.fillRect(X(-420), Y(track.finishS) - 1, X(420) - X(-420), 2);
+    ctx.fillRect(X(G.finish.u - G.finish.half), Y(G.finish.s) - 1.5, (G.finish.half * 2) / SCALE, 3);
     ctx.fillStyle = '#2de2ff';
-    ctx.fillRect(X(-14), Y(26) - 1, X(14) - X(-14), 2);
+    ctx.fillRect(X(G.start.u - G.start.half), Y(G.start.s) - 1.5, (G.start.half * 2) / SCALE, 3);
     this.base = c;
     this.X = X;
     this.Y = Y;
