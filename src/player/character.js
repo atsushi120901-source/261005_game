@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { damp, clamp } from '../core/utils.js';
 import { boardTexture, glowTexture } from '../gfx/textures.js';
-import { fabricNormal } from '../gfx/fabric.js';
+import { fabricNormal, grimeTexture } from '../gfx/fabric.js';
 
 // Procedural snowboarder.
 // Local space: board long axis = Z (nose at -Z), rider faces +X (toe edge),
@@ -49,6 +49,14 @@ function fabric(color, opts = {}) {
     n.repeat.set(...(opts.repeat || [2, 3]));
     m.normalMap = n;
     m.normalScale.set(opts.bump ?? 0.6, opts.bump ?? 0.6);
+  }
+  if (opts.grime) {
+    // weathering: stains, scuffs and faded patches over the base colour
+    const g = grimeTexture(opts.grimeSeed ?? 1, opts.grime).clone();
+    g.needsUpdate = true;
+    g.repeat.set(...(opts.grimeRepeat || [1, 1]));
+    m.map = g;
+    m.sheen *= 0.5;
   }
   return rimPatch(m, opts.rim ?? 0.12);
 }
@@ -195,16 +203,25 @@ export class Character {
     this.extras = new THREE.Group(); // world-space attachments (scarf, ponytail)
     this.meshes = [];
 
+    const gr = L.grime ?? 0;
     const M = (this.mats = {
-      jacket: fabric(L.jacket, { weave: 'nylon', repeat: [1, 2], bump: 0.45, sheen: 0.35 }),
-      jacket2: fabric(L.jacket2, { weave: 'nylon', repeat: [1, 1], bump: 0.4, sheen: 0.35 }),
-      sleeve: fabric(L.jacket, { weave: 'nylon', repeat: [1, 1], bump: 0.55, sheen: 0.35 }),
+      jacket: fabric(L.jacket, { weave: 'nylon', repeat: [1, 2], bump: 0.45, sheen: 0.35, grime: gr, grimeSeed: 3, grimeRepeat: [1, 1] }),
+      jacket2: fabric(L.jacket2, { weave: 'nylon', repeat: [1, 1], bump: 0.4, sheen: 0.35, grime: gr, grimeSeed: 5 }),
+      upperSleeve: fabric(L.jacket, { weave: 'nylon', repeat: [1, 1], bump: 0.55, sheen: 0.35, grime: gr, grimeSeed: 7 }),
+      sleeve: fabric(L.sleeve ?? L.jacket, { weave: 'nylon', repeat: [1, 1], bump: 0.55, sheen: 0.35, grime: gr, grimeSeed: 9 }),
       accent: fabric(L.accent, { sheen: 0.4, roughness: 0.5 }),
-      pants: fabric(L.pants, { roughness: 0.82, weave: 'pants', repeat: [1, 1], bump: 0.45 }),
-      boots: rimPatch(new THREE.MeshPhysicalMaterial({ color: L.boots, roughness: 0.5, clearcoat: 0.4, clearcoatRoughness: 0.4 }), 0.1),
-      gloves: fabric(L.gloves, { roughness: 0.6, weave: 'nylon', repeat: [1, 1], bump: 0.5 }),
+      pants: fabric(L.pants, { roughness: 0.82, weave: 'pants', repeat: [1, 1], bump: 0.5, grime: gr * 1.2, grimeSeed: 11, grimeRepeat: [1, 1] }),
+      patch: fabric(L.patch ?? L.pants, { roughness: 0.9, weave: 'nylon', repeat: [2, 2], bump: 0.5, grime: gr * 1.3, grimeSeed: 13 }),
+      boots: (() => {
+        const b = new THREE.MeshPhysicalMaterial({ color: L.boots, roughness: L.leather ? 0.72 : 0.5, clearcoat: L.leather ? 0.15 : 0.4, clearcoatRoughness: 0.5 });
+        if (gr) { const g = grimeTexture(17, gr * 1.4).clone(); g.needsUpdate = true; g.repeat.set(4, 4); b.map = g; }
+        return rimPatch(b, 0.08);
+      })(),
+      gloves: fabric(L.gloves, { roughness: 0.6, weave: 'nylon', repeat: [1, 1], bump: 0.5, grime: gr, grimeSeed: 19 }),
       gaiter: fabric(L.gaiter, { roughness: 0.9, weave: 'knit', repeat: [3, 1], bump: 0.5 }),
-      knit: fabric(L.jacket2, { roughness: 0.95, weave: 'knit', repeat: [4, 1], bump: 0.9 }),
+      knit: fabric(L.beanie ?? L.jacket2, { roughness: 0.95, weave: 'knit', repeat: [4, 1], bump: 0.9, grime: gr * 0.6, grimeSeed: 21 }),
+      webbing: fabric(L.webbing ?? 0x2e3033, { roughness: 0.8, weave: 'knit', repeat: [1, 8], bump: 0.4, grime: gr, grimeSeed: 23 }),
+      pack: fabric(L.pack ?? 0x4a4d50, { roughness: 0.75, weave: 'nylon', repeat: [2, 2], bump: 0.5, grime: gr * 1.2, grimeSeed: 25 }),
       skin: rimPatch(new THREE.MeshPhysicalMaterial({ color: L.skin, roughness: 0.48, sheen: 0.5, sheenRoughness: 0.35, sheenColor: new THREE.Color(0xff9a80) }), 0.06, 0xffc0a0),
       lip: new THREE.MeshPhysicalMaterial({ color: new THREE.Color(L.skin).lerp(new THREE.Color(0xb04a4a), 0.45), roughness: 0.35, sheen: 0.4, sheenColor: new THREE.Color(0xffa0a0) }),
       helmet: rimPatch(new THREE.MeshPhysicalMaterial({ color: L.helmet, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.06 }), 0.1),
@@ -215,7 +232,7 @@ export class Character {
         iridescenceThicknessRange: [200, 800], envMapIntensity: 2.6, clearcoat: 1,
         emissive: new THREE.Color(L.lens).multiplyScalar(0.18),
       }),
-      strap: fabric(L.accent, { sheen: 0.2, roughness: 0.6, weave: 'knit', repeat: [12, 1], bump: 0.3 }),
+      strap: fabric(L.strapColor ?? (L.grime ? 0x1c1d1f : L.accent), { sheen: 0.2, roughness: 0.6, weave: 'knit', repeat: [12, 1], bump: 0.3 }),
       hair: rimPatch(new THREE.MeshPhysicalMaterial({ color: L.hairColor, roughness: 0.45, sheen: 1, sheenRoughness: 0.3, sheenColor: new THREE.Color(L.hairColor).lerp(new THREE.Color(0xffffff), 0.3) }), 0.1),
       dark: new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.6 }),
       rubber: new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.85 }),
@@ -343,10 +360,25 @@ export class Character {
       lace.position.set(0.075, 0.155, 0);
       lace.rotation.z = -0.55;
       boot.add(lace);
-      for (const zz of [-0.08, 0.08]) {
-        const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.016, 16).rotateX(Math.PI / 2), M.bindingAcc);
-        dial.position.set(-0.04, 0.2, zz);
-        boot.add(dial);
+      if (L.leather) {
+        // criss-cross laces and a padded collar
+        for (let k = 0; k < 6; k++) {
+          const lc = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.006, 0.075), M.webbing);
+          lc.position.set(0.105 - k * 0.022, 0.12 + k * 0.03, 0);
+          lc.rotation.set(k % 2 ? 0.5 : -0.5, 0, -0.55);
+          boot.add(lc);
+        }
+        const collarB = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.018, 8, 18), M.boots);
+        collarB.rotation.x = Math.PI / 2;
+        collarB.position.set(-0.04, 0.29, 0);
+        collarB.scale.set(1.15, 1, 1);
+        boot.add(collarB);
+      } else {
+        for (const zz of [-0.08, 0.08]) {
+          const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.016, 16).rotateX(Math.PI / 2), M.bindingAcc);
+          dial.position.set(-0.04, 0.2, zz);
+          boot.add(dial);
+        }
       }
       // ankle strap (padded) and toe cap strap with ratchets
       const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.024, 8, 20, Math.PI * 1.15), M.binding);
@@ -395,7 +427,7 @@ export class Character {
     this.spine.add(this.chest);
 
     // long, loose snowboard shell jacket; elliptical cross-section
-    const D = 0.8;
+    const D = 0.77;
     const lower = [
       [0.0, -0.4], [0.25, -0.4], [0.262, -0.375], [0.255, -0.28], [0.238, -0.16], [0.222, -0.04], [0.23, 0.06], [0.244, 0.14], [0.246, 0.17],
     ].map(([r, y]) => new THREE.Vector2(r, y));
@@ -438,16 +470,31 @@ export class Character {
       hood.material.side = THREE.DoubleSide;
     }
     if (L.backpack) {
-      const bp = add(this.chest, new RoundedBoxGeometry(0.14, 0.42, 0.3, 4, 0.06), M.jacket2, -0.255, 0.04, 0);
-      add(bp, new RoundedBoxGeometry(0.05, 0.18, 0.22, 3, 0.02), M.accent, -0.07, -0.08, 0);
-      add(bp, new RoundedBoxGeometry(0.02, 0.05, 0.12, 1, 0.008), M.dark, -0.09, 0.12, 0);
-      for (const z of [-0.1, 0.1]) {
-        const strap = add(this.chest, new THREE.TorusGeometry(0.2, 0.012, 6, 20, Math.PI * 0.9), M.dark, -0.03, 0.12, z);
-        strap.scale.set(0.95, 1.1, 0.4);
-        strap.rotation.z = Math.PI * 0.55;
-        // sternum strap clip
+      // technical pack: rounded body, lid, front pocket, compression straps and a bottle
+      const bp = add(this.chest, new RoundedBoxGeometry(0.16, 0.44, 0.3, 5, 0.07), M.pack, -0.26, 0.03, 0);
+      add(bp, new RoundedBoxGeometry(0.06, 0.12, 0.27, 3, 0.04), M.pack, -0.01, 0.23, 0);
+      add(bp, new RoundedBoxGeometry(0.06, 0.2, 0.22, 4, 0.05), M.pack, -0.085, -0.06, 0);
+      add(bp, new THREE.SphereGeometry(0.03, 12, 8).scale(0.4, 1, 1), M.accent, -0.115, -0.02, 0.04);
+      for (const y of [-0.05, 0.1]) add(bp, new THREE.BoxGeometry(0.172, 0.02, 0.31), M.webbing, 0, y, 0);
+      const bottle = add(bp, new THREE.CylinderGeometry(0.032, 0.032, 0.17, 14), M.metal, -0.01, -0.05, 0.17);
+      add(bottle, new THREE.CylinderGeometry(0.02, 0.026, 0.035, 12), M.dark, 0, 0.1, 0);
+      add(bottle, new THREE.CylinderGeometry(0.0335, 0.0335, 0.06, 14), M.accent, 0, -0.02, 0);
+    }
+    if (L.harness || L.backpack) {
+      // shoulder straps over the jacket, sternum strap and hip belt
+      for (const z of [-0.105, 0.105]) {
+        const strap = add(this.chest, new THREE.TorusGeometry(0.228, 0.017, 6, 24, Math.PI * 0.95), M.webbing, -0.02, 0.07, z);
+        strap.scale.set(1.0, 1.25, 0.55);
+        strap.rotation.z = Math.PI * 0.52;
+        add(this.chest, new RoundedBoxGeometry(0.03, 0.05, 0.022, 1, 0.006), M.metal, 0.2, 0.02, z * 0.9);
       }
-      add(this.chest, new THREE.BoxGeometry(0.01, 0.015, 0.18), M.dark, 0.205, 0.15, 0);
+      add(this.chest, new THREE.BoxGeometry(0.01, 0.018, 0.2), M.webbing, 0.2, 0.12, 0);
+      add(this.chest, new RoundedBoxGeometry(0.018, 0.04, 0.05, 1, 0.006), M.dark, 0.204, 0.13, 0);
+      const belt = add(this.chest, new THREE.TorusGeometry(0.236, 0.022, 6, 36), M.webbing, 0, -0.245, 0);
+      belt.rotation.x = Math.PI / 2;
+      belt.scale.set(0.79, 1, 1.6);
+      add(this.chest, new RoundedBoxGeometry(0.03, 0.06, 0.09, 1, 0.01), M.dark, 0.19, -0.245, 0);
+      add(this.chest, new RoundedBoxGeometry(0.02, 0.03, 0.05, 1, 0.006), M.metal, 0.205, -0.245, 0);
     }
 
     // ---------------------------------------------------------------- neck & head (face is +X)
@@ -554,7 +601,7 @@ export class Character {
         pp.setXYZ(i, x * k, y * k, z * k);
       }
       pom.computeVertexNormals();
-      add(H, pom, M.accent, -0.025, 0.17, 0);
+      if (L.pom !== false) add(H, pom, M.accent, -0.025, 0.17, 0);
     } else if (L.headwear === 'hood') {
       // beanie under a cinched hood
       add(H, new THREE.SphereGeometry(0.118, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), M.knit, -0.006, 0.025, 0).scale.set(1.02, 1.1, 0.98);
@@ -596,7 +643,7 @@ export class Character {
       const leg = {
         thigh: limb(thighGeo, M.pants),
         shin: limb(shinGeo, M.pants),
-        knee: limb(new THREE.SphereGeometry(0.108, 18, 12).scale(1, 0.9, 1.05), M.pants),
+        knee: limb(new THREE.SphereGeometry(0.108, 18, 12).scale(1, 0.9, 1.05), M.patch),
       };
       // cargo pocket on the outside of the thigh and a knee dart
       const pocket = new THREE.Mesh(new RoundedBoxGeometry(0.03, 0.14, 0.1, 2, 0.012), M.pants);
@@ -615,10 +662,10 @@ export class Character {
     const foreGeo = profileGeo([[-0.01, 0.071, 0.071], [0.1, 0.068, 0.066], [0.19, 0.064, 0.062], [0.25, 0.07, 0.068], [0.28, 0.074, 0.072]], 18);
     this.arms = [0, 1].map(() => {
       const a = {
-        upper: limb(upperGeo, M.sleeve),
+        upper: limb(upperGeo, M.upperSleeve),
         fore: limb(foreGeo, M.sleeve),
-        elbow: limb(new THREE.SphereGeometry(0.072, 14, 10), M.sleeve),
-        shoulder: limb(new THREE.SphereGeometry(0.085, 18, 14), M.sleeve),
+        elbow: limb(new THREE.SphereGeometry(0.072, 22, 16), M.sleeve),
+        shoulder: limb(new THREE.SphereGeometry(0.085, 24, 18), M.upperSleeve),
         hand: new THREE.Group(),
       };
       this.root.add(a.hand);
@@ -894,7 +941,7 @@ export class Character {
       this.blob.quaternion.setFromUnitVectors(Y, sh.n).multiply(_q.setFromAxisAngle(Y, sh.yaw));
       const k = 1 + hgt * 0.18;
       this.blob.scale.set(0.95 * k, 1, 1.9 * k);
-      this.blob.material.opacity = 0.5 * Math.max(0, 1 - hgt / 8);
+      this.blob.material.opacity = 0.3 * Math.max(0, 1 - hgt / 8);
     } else {
       this.blob.visible = false;
     }

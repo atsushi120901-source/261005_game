@@ -19,7 +19,7 @@ export function createSnowMaterial(stage) {
     roughness: 0.78,
     metalness: 0.0,
     normalMap: nm,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: stage.terrain === 'mountain' ? new THREE.Vector2(0.16, 0.16) : new THREE.Vector2(0.55, 0.55),
     vertexColors: true,
   });
   mat.userData.glint = stage.id === 'golden' ? 3.0 : 2.2;
@@ -68,7 +68,7 @@ export function createFacadeMaterial(stage) {
     sh.uniforms.uWarm = { value: warm };
     sh.uniforms.uCool = { value: cool };
     sh.uniforms.uTime = sharedUniforms.uTime;
-    sh.uniforms.uNight = { value: stage.id === 'golden' ? 0.35 : 1.0 };
+    sh.uniforms.uNight = { value: stage.night ?? (stage.id === 'golden' ? 0.35 : 1.0) };
     sh.vertexShader = sh.vertexShader
       .replace(
         '#include <common>',
@@ -167,6 +167,30 @@ export function createFacadeMaterial(stage) {
             // snow caps on roofs, ledges and sills
             diffuseColor.rgb = vec3(0.93, 0.95, 1.0) * (0.92 + 0.08 * vn2(p * 3.0));
             fRough = 0.8;
+          } else if (style > 5.5) {
+            // weathered timber cabins: horizontal boards, small framed windows
+            float row = floor(p.y * 4.0);
+            float board = fract(p.y * 4.0);
+            float seam = smoothstep(0.0, 0.1, board) * smoothstep(1.0, 0.9, board);
+            float plank = h12(vec2(row, floor(p.x / 2.4 + h12(vec2(row, seed)) * 3.0) + seed * 13.0));
+            vec3 wood = wall * (0.72 + 0.4 * plank) * (0.62 + 0.38 * seam);
+            wood *= 0.82 + 0.18 * vn2(vec2(p.x * 7.0, p.y * 0.6) + seed * 3.0);
+            wood *= 1.0 - 0.25 * smoothstep(0.55, 0.9, vn2(vec2(p.x * 0.8, p.y * 0.25) + seed));
+            vec2 cs = vec2(2.6, 2.7); vec2 wf = vec2(0.42, 0.46);
+            vec2 cell = floor(p / cs); vec2 f = fract(p / cs);
+            vec2 m0 = (1.0 - wf) * 0.5;
+            float win = step(m0.x, f.x) * step(f.x, 1.0 - m0.x) * step(m0.y, f.y) * step(f.y, 1.0 - m0.y)
+                      * step(0.45, h12(cell + seed * 9.0)) * step(0.8, p.y);
+            vec2 w = clamp((f - m0) / wf, 0.0, 1.0);
+            float frameW = clamp(step(abs(w.x - 0.5), 0.035) + step(abs(w.y - 0.5), 0.035)
+                      + 1.0 - step(0.06, w.x) * step(w.x, 0.94) * step(0.06, w.y) * step(w.y, 0.94), 0.0, 1.0);
+            float litW = step(h12(cell * 2.3 + seed), litR);
+            vec3 L2 = uWarm * (0.6 + 0.6 * h12(cell + 1.7)) * uNight * litW + vec3(0.03, 0.035, 0.045);
+            vec3 room = interiorRoom(w, cs * wf, 3.0, Vt, L2, h12(cell * 5.1), 0.0);
+            diffuseColor.rgb = mix(wood, mix(vec3(0.05, 0.06, 0.07), vec3(0.78, 0.76, 0.7), frameW), win);
+            fEmis += room * win * (1.0 - frameW);
+            fRough = mix(0.92, 0.08, win * (1.0 - frameW));
+            fMetal = 0.4 * win * (1.0 - frameW);
           } else if (style > 4.5) {
             // plain props: AC units, balcony slabs, parapets, awnings, tanks
             float grime = vn2(p * vec2(1.5, 0.6) + seed * 7.0);

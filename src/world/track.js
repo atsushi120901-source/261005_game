@@ -285,8 +285,8 @@ export class Track {
     // Stair sets with handrails
     for (const d of this.drops) {
       const top = d.s - 2;
-      // handrails follow the stairs
-      for (const side of [-1, 1]) {
+      // handrails follow the stairs (city only; in the mountains it is a natural rock drop)
+      for (const side of this.stage.terrain === 'mountain' ? [] : [-1, 1]) {
         const r = {
           type: 'handrail', s0: d.s - 0.6, s1: d.s + d.len + 0.6, u: side * 4.5,
           y0: this.baseY(d.s - 0.6) + 0.95, y1: this.baseY(d.s + d.len + 0.6) + 0.95, h: 0.95,

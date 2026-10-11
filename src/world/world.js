@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp } from '../core/utils.js';
 import { HALF_W, BANK_END, BANK_TOP, EDGE_U, BUILD_U } from './track.js';
 import { GeoBuilder, bake } from './geom.js';
+import { buildMountainWorld, updateLift, updateBirds, rockGeometry } from './mountain.js';
 import {
   createSnowMaterial, createFacadeMaterial, createScreenMaterial, createSkyMaterial, sharedUniforms,
 } from '../gfx/materials.js';
@@ -41,12 +42,17 @@ export class World {
       const off = stage.sky.sunAlongTrack;
       this.sunDir.set(dx / l - (dz / l) * off, stage.sky.sunDir[1], dz / l + (dx / l) * off).normalize();
     }
+    this.isMountain = stage.terrain === 'mountain';
     this._buildSky();
     this._buildLights();
     this._buildTrack();
-    this._buildEdges();
-    this._buildBuildings();
-    this._buildProps();
+    if (this.isMountain) {
+      buildMountainWorld(this);
+    } else {
+      this._buildEdges();
+      this._buildBuildings();
+      this._buildProps();
+    }
     this._buildFeatures();
     this._buildTokens();
     this._buildGates();
@@ -72,6 +78,7 @@ export class World {
       vegetation: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9 }),
       plainSnow: new THREE.MeshStandardMaterial({ color: 0xf0f4ff, roughness: 0.8 }),
       wire: new THREE.LineBasicMaterial({ color: 0x0a0a0e, transparent: true, opacity: 0.85 }),
+      log: new THREE.MeshStandardMaterial({ color: 0x5b4130, roughness: 0.92 }),
     };
     for (const k in m) this.disposables.push(m[k]);
     return m;
@@ -163,7 +170,7 @@ export class World {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envRT = pmrem.fromScene(envScene, 0.035);
     this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = this.stage.id === 'golden' ? 0.9 : 0.75;
+    this.scene.environmentIntensity = this.isMountain ? 1.0 : this.stage.id === 'golden' ? 0.9 : 0.75;
     pmrem.dispose();
     envScene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material !== this.skyMat) o.material.dispose(); });
   }
@@ -230,7 +237,7 @@ export class World {
           const au = Math.abs(u);
           let ao = 1;
           ao -= 0.12 * Math.exp(-Math.pow((au - HALF_W) / 0.9, 2));
-          ao -= 0.28 * clamp((au - (BUILD_U - 1.6)) / 1.6, 0, 1);
+          if (!this.isMountain) ao -= 0.28 * clamp((au - (BUILD_U - 1.6)) / 1.6, 0, 1);
           ao -= 0.05 * Math.exp(-Math.pow((au - EDGE_U - 0.4) / 0.4, 2));
           const blue = 0.02 * Math.sin(s * 0.05 + u * 0.3);
           col[i * 3] = ao * (0.98 - blue);
@@ -335,9 +342,10 @@ export class World {
     // Box aligned with track at s, centered laterally at u0. Width w along track.
     // opt.fs: use the frame at fs (straight side streets), offset by opt.ds along it.
     const tr = this.track;
-    const f = tr.frame(opt ? opt.fs : s, {});
+    const fs = opt?.fs !== undefined;
+    const f = tr.frame(fs ? opt.fs : s, {});
     const T = V(f.tx, 0, f.tz), R = V(f.rx, 0, f.rz);
-    const c = opt ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
+    const c = fs ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
     const corner = (a, b, y) => V(c.x + T.x * a + R.x * b, y, c.z + T.z * a + R.z * b);
     const hw = w / 2, hd = d / 2;
     const col = [color.r, color.g, color.b];
@@ -363,14 +371,16 @@ export class World {
 
   _gable(gb, s, u0, w, d, y1, rise, color, seed, opt = null) {
     const tr = this.track;
-    const f = tr.frame(opt ? opt.fs : s, {});
+    const fs = opt?.fs !== undefined;
+    const f = tr.frame(fs ? opt.fs : s, {});
     const T = V(f.tx, 0, f.tz), R = V(f.rx, 0, f.rz);
-    const c = opt ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
+    const c = fs ? tr.toWorld(opt.fs, u0, 0).addScaledVector(T, opt.ds) : tr.toWorld(s, u0, 0);
+    const sty = opt?.style ?? 2;
     const P = (a, b, y) => V(c.x + T.x * a + R.x * b, y, c.z + T.z * a + R.z * b);
     const ov = 0.7;
     const hw = w / 2 + ov, hd = d / 2 + ov;
-    const snowA = { color: [1, 1, 1], aFacade: [2, seed, 0, 1] };
-    const wallA = { color: [color.r, color.g, color.b], aFacade: [2, seed, 0, 0] };
+    const snowA = { color: [1, 1, 1], aFacade: [sty, seed, 0, 1] };
+    const wallA = { color: [color.r, color.g, color.b], aFacade: [sty, seed, 0, 0] };
     const yr = y1 + rise, ye = y1 - 0.25;
     // two roof planes (ridge along T)
     gb.quad(P(-hw, -hd, ye), P(hw, -hd, ye), P(hw, 0, yr), P(-hw, 0, yr), [[0, 0], [1, 0], [1, 1], [0, 1]], snowA, V(R.x * -1, 1, R.z * -1));
@@ -1367,9 +1377,9 @@ export class World {
   _buildFeatures() {
     const tr = this.track;
     const st = this.stage;
-    const accent = st.id === 'golden' ? 0xff8a2a : st.id === 'aurora' ? 0x4affc0 : 0x2de2ff;
+    const accent = st.id === 'golden' ? 0xff8a2a : st.id === 'aurora' ? 0x4affc0 : st.id === 'summit' ? 0x2a7dff : 0x2de2ff;
     const lipMat = this.emissive(accent, 3);
-    const accent2 = st.id === 'neon' ? 0xff2d8a : accent;
+    const accent2 = st.id === 'neon' ? 0xff2d8a : st.id === 'summit' ? 0xff5a14 : accent;
     const poleMat = this.emissive(accent2, 2.5);
     const m = new THREE.Matrix4();
     const lipList = [], flagList = [];
@@ -1426,6 +1436,18 @@ export class World {
       if (r.type === 'ledge') {
         this._ledge(r);
       } else {
+        if (this.isMountain) {
+          // a felled log laid as a jib
+          const logPts = pts.map((p) => p.clone().add(new THREE.Vector3(0, -0.03, 0)));
+          this._pathTube(logPts, 0.085, this.mats.log, 10, { cast: this.quality.shadows, receive: true });
+          for (let s = r.s0 + 0.8; s < r.s1; s += 3) {
+            const top = tr.railY(r, s) - 0.12;
+            const gy = tr.height(s, r.u, false) - 0.3;
+            const p = tr.toWorld(s, r.u, gy);
+            supports.push(new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(s)), V(1, top - gy, 1)));
+          }
+          continue;
+        }
         this._pathTube(pts, 0.045, this.mats.metal, 8, { cast: this.quality.shadows });
         const under = pts.map((p) => p.clone().add(new THREE.Vector3(0, -0.07, 0)));
         this._pathTube(under, 0.014, railGlow, 4);
@@ -1437,7 +1459,8 @@ export class World {
         }
       }
     }
-    this._instanced(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), this.mats.darkMetal, supports);
+    if (this.isMountain) this._instanced(new THREE.BoxGeometry(1.0, 1, 0.14).translate(0, 0.5, 0), this.mats.wood, supports, { cast: this.quality.shadows });
+    else this._instanced(new THREE.CylinderGeometry(0.035, 0.035, 1, 6).translate(0, 0.5, 0), this.mats.darkMetal, supports);
 
     // Stair nosings
     const noses = [];
@@ -1460,7 +1483,7 @@ export class World {
         this.add(sign);
       }
     }
-    this._instanced(new THREE.BoxGeometry(HALF_W * 2 + 0.2, 0.07, 0.16), this.mats.concrete, noses);
+    if (!this.isMountain) this._instanced(new THREE.BoxGeometry(HALF_W * 2 + 0.2, 0.07, 0.16), this.mats.concrete, noses);
 
     this._buildCars();
   }
@@ -1482,12 +1505,29 @@ export class World {
       const pc = tr.toWorld(sm, r.u, top);
       caps.push(bake(new THREE.BoxGeometry(0.76, 0.05, len), new THREE.Matrix4().compose(pc, q, V(1, 1, 1))));
     }
-    this.add(new THREE.Mesh(mergeGeometries(geos), this.mats.concrete), { cast: this.quality.shadows, receive: true });
-    this.add(new THREE.Mesh(mergeGeometries(caps), this.mats.paint), { cast: false });
+    this.add(new THREE.Mesh(mergeGeometries(geos), this.isMountain ? this.mats.wood : this.mats.concrete), { cast: this.quality.shadows, receive: true });
+    this.add(new THREE.Mesh(mergeGeometries(caps), this.isMountain ? this.mats.log : this.mats.paint), { cast: false });
   }
 
   _buildCars() {
     const tr = this.track;
+    if (this.isMountain) {
+      // snow-capped boulders take the place of parked cars
+      const rocks = [], snow = [];
+      tr.cars.forEach((c, i) => {
+        const sm = c.s0 + c.len / 2;
+        const gy = tr.height(sm, c.u0, false);
+        const q = new THREE.Quaternion().setFromAxisAngle(UP, tr.yawAt(sm));
+        const m = new THREE.Matrix4().compose(tr.toWorld(sm, c.u0, gy + 0.55), q, V(1.15, 1.25, 2.45));
+        rocks.push(bake(rockGeometry(500 + i, 0.8), m));
+        snow.push(this._carSnow(c));
+      });
+      if (!rocks.length) return;
+      const sh = this.quality.shadows;
+      this.add(new THREE.Mesh(mergeGeometries(rocks), this.mats.rockMat), { cast: sh, receive: true });
+      this.add(new THREE.Mesh(mergeGeometries(snow), this.mats.snow), { cast: sh, receive: true });
+      return;
+    }
     const rng = mulberry32(this.stage.seed + 31);
     const body = [], glass = [], wheels = [], lights = [], tails = [], snow = [];
     const colors = [0xb8261e, 0x1d3f8a, 0xe8e8e8, 0x1a1a1f, 0xf2c20f, 0x2e6b4a, 0x8a8f99, 0x5a2a6a];
@@ -1737,6 +1777,10 @@ export class World {
     if (this.carHazardMat) this.carHazardMat.color.setRGB(2.5, 0.3, 0.1).multiplyScalar(0.5 + 0.5 * (Math.sin(t * 5) > 0 ? 1 : 0.2));
     this._updateTokens(t);
     this._updateTraffic(t);
+    if (this.isMountain) {
+      updateLift(this, t);
+      updateBirds(this, t, focus);
+    }
     if (this.signalMats) {
       const ph = t % 18;
       const on = ph < 8 ? 0 : ph < 10 ? 1 : 2;

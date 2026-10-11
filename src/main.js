@@ -8,6 +8,7 @@ import { World } from './world/world.js';
 import { RIDERS, getRider } from './player/characters.js';
 import { Character } from './player/character.js';
 import { Rider, trickName, trickPoints } from './player/rider.js';
+import { NpcRider } from './player/npc.js';
 import { Effects } from './fx/effects.js';
 import { PostFX } from './gfx/post.js';
 import { CameraRig } from './gfx/cameraRig.js';
@@ -99,6 +100,7 @@ class Game {
 
   // ------------------------------------------------------------------ loading
   async loadStage(id) {
+    this.clearNpcs();
     const stage = getStage(id);
     this.ui.showLoading(stage);
     await this.ui.progress(0.1, '地形を生成中...');
@@ -155,6 +157,7 @@ class Game {
 
   // ------------------------------------------------------------------ states
   toTitle() {
+    this.clearNpcs();
     this.state = 'title';
     this.character.root.visible = true;
     this.character.extras.visible = true;
@@ -165,6 +168,7 @@ class Game {
   }
 
   toSelect() {
+    this.clearNpcs();
     this.state = 'select';
     this.character.root.visible = true;
     this.character.extras.visible = true;
@@ -213,6 +217,20 @@ class Game {
     this.finishT = 0;
     this.ui.show('hud');
     this.ui.resetHud(this.stage);
+    this.spawnNpcs();
+  }
+
+  // Other riders on the slope (mountain stages only).
+  spawnNpcs() {
+    this.clearNpcs();
+    if (this.stage.terrain !== 'mountain' || this.quality.name === 'LOW') return;
+    const others = RIDERS.filter((r) => r.id !== this.riderId);
+    this.npcs = others.map((def, i) => new NpcRider(this.scene, this.track, def, i + 1));
+  }
+
+  clearNpcs() {
+    for (const n of this.npcs || []) n.dispose();
+    this.npcs = [];
   }
 
   pause() {
@@ -477,6 +495,7 @@ class Game {
         }
         this.audio.setRide({ speed: r.speed, carve: r.sprayAmt || 0, grounded: r.state === 'ground', air: r.state === 'air' });
       }
+      for (const n of this.npcs || []) n.update(sdt, r.s);
       this.rig.update(sdt, r);
       // hide the body in helmet view
       const pov = this.rig.camMode === 'pov' && !(this.rig.intro > 0) && r.state !== 'crash' && this.finishT <= 0;

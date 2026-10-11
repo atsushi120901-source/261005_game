@@ -147,6 +147,33 @@ export function boardTexture(colors, label, pattern = 0) {
       ctx.arc(128, 512, 30 + i * 46, 0, Math.PI * 2);
       ctx.stroke();
     }
+  } else if (pattern === 3) {
+    // worn, sun-faded slate deck: plain colour, scratches and chipped edges
+    ctx.fillStyle = hex(colors[0]);
+    ctx.fillRect(0, 0, 256, 1024);
+    const g2 = ctx.createLinearGradient(0, 0, 256, 0);
+    g2.addColorStop(0, 'rgba(255,255,255,0.08)');
+    g2.addColorStop(0.5, 'rgba(255,255,255,0)');
+    g2.addColorStop(1, 'rgba(0,0,0,0.12)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, 256, 1024);
+    for (let i = 0; i < 260; i++) {
+      const x = Math.random() * 256, y = Math.random() * 1024;
+      ctx.strokeStyle = `rgba(255,255,255,${0.08 + Math.random() * 0.22})`;
+      ctx.lineWidth = 0.5 + Math.random();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 60);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = `rgba(230,230,225,${0.2 + Math.random() * 0.3})`;
+      const y = Math.random() * 1024;
+      ctx.fillRect(Math.random() < 0.5 ? 0 : 250, y, 6, 3 + Math.random() * 14);
+    }
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = hex(colors[2]);
+    ctx.fillRect(0, 470, 256, 6);
   } else {
     // mountain / skyline zigzag
     ctx.globalAlpha = 0.55;
@@ -164,7 +191,8 @@ export function boardTexture(colors, label, pattern = 0) {
   ctx.save();
   ctx.translate(128, 512);
   ctx.rotate(-Math.PI / 2);
-  ctx.font = '900 92px "Arial Black", Impact, sans-serif';
+  ctx.font = pattern === 3 ? '900 64px "Arial Black", Impact, sans-serif' : '900 92px "Arial Black", Impact, sans-serif';
+  if (pattern === 3) ctx.globalAlpha = 0.55;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
